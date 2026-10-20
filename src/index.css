@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Outfit-Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Roboto-Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'STIXTwoMath';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/STIXTwoMath-Regular.woff') format('woff');
+}
+
+@theme {
+  --font-outfit: 'Outfit', sans-serif;
+}
+
+@keyframes bellRing {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-6deg); }
+  75% { transform: rotate(2deg); }
+}
+
+.animate-bell-ring {
+  animation: bellRing 1.2s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c7d2fe transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #c7d2fe;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #818cf8;
+  background-clip: padding-box;
+}
+
+.hide-number-steppers {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.hide-number-steppers::-webkit-inner-spin-button,
+.hide-number-steppers::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
