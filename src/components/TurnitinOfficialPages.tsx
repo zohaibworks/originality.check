@@ -231,10 +231,10 @@ export const TurnitinCoverPage: React.FC<{
       <div className="mt-auto mb-10 pt-36 sm:pt-44 max-w-2xl w-full">
         {/* Author Initials & Document Title Block */}
         <div>
-          <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-normal leading-none">
+          <div className="text-2xl sm:text-3xl font-semibold text-slate-700 tracking-normal leading-none">
             {authorInitials}
           </div>
-          <h1 className="text-[15px] sm:text-[16px] font-bold text-slate-900 leading-snug mt-2">
+          <h1 className="text-[13px] sm:text-[14px] font-bold text-slate-900 leading-snug mt-2">
             {report.fileName || report.title}
           </h1>
           <div className="flex items-center gap-1 text-[12px] text-slate-600 font-normal mt-1.5">
@@ -245,8 +245,8 @@ export const TurnitinCoverPage: React.FC<{
             />
             <span>Class 0.2</span>
           </div>
-          <div className="flex items-center text-[12px] text-slate-600 font-normal mt-2.5">
-            <GraduationCap className="w-3.5 h-3.5 text-slate-600 shrink-0 inline-block" />
+          <div className="flex items-center text-[12px] text-slate-500 font-normal mt-2.5">
+            <GraduationCap className="w-3.5 h-3.5 text-slate-500 shrink-0 inline-block" />
             <span className="ml-1">{institution}</span>
           </div>
         </div>
@@ -256,7 +256,7 @@ export const TurnitinCoverPage: React.FC<{
 
         {/* Document Details Section */}
         <div>
-          <h2 className="text-[16px] font-bold text-black mb-4">
+          <h2 className="text-[13.5px] font-semibold text-slate-700 mb-4">
             Document Details
           </h2>
 
@@ -306,14 +306,14 @@ export const TurnitinCoverPage: React.FC<{
             </div>
 
             {/* Right Column: Pages, Words, Characters inside the short, compact gray shaded box positioned near the right side */}
-            <div className="w-max shrink-0 self-start mr-10 bg-[#f0f3f6] border border-[#e2e6eb] rounded-2xl px-3 py-2.5 space-y-2 text-[11.5px] text-black font-medium shadow-none">
-              <div className="leading-tight text-black font-medium">
+            <div className="w-max shrink-0 self-start mr-10 bg-[#f0f3f6] border border-[#e2e6eb] rounded-2xl px-3 py-3.5 space-y-3.5 text-[11.5px] text-slate-800 font-medium shadow-none">
+              <div className="leading-tight">
                 {manuscriptPages} Pages
               </div>
-              <div className="leading-tight text-black font-medium">
+              <div className="leading-tight">
                 {report.wordCount.toLocaleString()} Words
               </div>
-              <div className="leading-tight text-black font-medium">
+              <div className="leading-tight">
                 {report.characterCount.toLocaleString()} Characters
               </div>
             </div>
@@ -365,18 +365,24 @@ export const TurnitinAIOverviewPage: React.FC<{
         {/* Top Split: Detection headline vs Caution Box (Balanced width, tight line-height, equal vertical alignment) */}
         <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1.25fr] gap-5 items-center">
           {/* Left: AI percentage and explanation */}
-          <div className="flex flex-col justify-center">
-            <h1
-              className="text-[28px] text-black leading-none m-0 p-0"
-              style={{
-                fontFamily: "'Times New Roman', Georgia, 'Cambria', serif",
-                fontWeight: 700,
-                letterSpacing: '0em',
-              }}
-            >
-              {toBoldUnicode(`${scoreDisplay} detected as AI`)}
-            </h1>
-            <p className="text-[7px] sm:text-[7.5px] text-slate-800 leading-[1.25] mt-1">
+          <div className="flex flex-col justify-center gap-0">
+            <div style={{ lineHeight: 0 }}>
+              <h1
+                className="text-[25px] text-slate-800 p-0"
+                style={{
+                  fontFamily: "'Times New Roman', Georgia, 'Cambria', serif",
+                  fontWeight: 600,
+                  letterSpacing: '0em',
+                  lineHeight: 1,
+                  marginTop: 0,
+                  marginBottom: 0,
+                  display: 'inline',
+                }}
+              >
+                {toBoldUnicode(`${scoreDisplay} detected as AI`)}
+              </h1>
+            </div>
+            <p className="text-[7px] sm:text-[7.5px] text-slate-800 leading-[1.25]" style={{ marginTop: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, display: 'block' }}>
               {isBelowThreshold ? (
                 <span className="font-normal text-black">
                   AI detection includes the possibility of false positives. Although some text in
@@ -389,7 +395,7 @@ export const TurnitinAIOverviewPage: React.FC<{
                   submission was identified as AI generated.
                 </span>
               ) : (
-                <span className="font-normal text-slate-800">
+                <span className="font-normal text-slate-800 text-[6.5px] sm:text-[7px]">
                   The percentage indicates the combined amount of likely AI-generated text as well
                   as likely AI-generated text that was also likely revised by AI.
                 </span>
@@ -483,7 +489,7 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
   };
 
   return (
-    <div className="flex flex-col justify-between h-full min-h-[960px] font-sans p-6 sm:p-10 text-slate-900 bg-white select-text">
+    <div className="flex flex-col justify-between h-[1050px] font-sans p-6 sm:p-10 text-slate-900 bg-white select-text">
       <TurnitinPageHeader
         pageNumber={2}
         totalPages={totalPages}
@@ -492,7 +498,7 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
         mode={mode}
       />
 
-      <div className="mt-2 mb-auto space-y-4 max-w-3xl w-full">
+      <div className="mt-2 flex-1 flex flex-col gap-4 max-w-3xl w-full">
         {/* Main Similarity Headline without extra space */}
         <div className="space-y-1">
           <h1 className="text-[21px] sm:text-[23px] font-bold text-[#0f172a] tracking-tight leading-tight m-0 p-0">
@@ -503,8 +509,8 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
           </p>
         </div>
 
-        {/* Filtered from the Report starting on the left side */}
-        <div className="space-y-1 text-[11px] pt-1">
+        {/* Filtered from the Report — one line below Overall Similarity */}
+        <div className="space-y-1 text-[11px] mt-3 pt-1">
           <div className="font-bold text-black text-[14.5px]">Filtered from the Report</div>
           <div className="space-y-0.5 text-[10.5px] text-black font-normal">
             <div>• Bibliography</div>
@@ -520,78 +526,78 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
         {/* Two Columns: Match Groups & Top Sources enclosed within underlines */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           {/* Column 1: Match Groups */}
-          <div className="space-y-3.5">
+          <div className="space-y-4">
             <h3 className="text-[15.5px] font-bold text-slate-900 tracking-tight">
               Match Groups
             </h3>
 
-            <div className="space-y-3.5 text-xs">
+            <div className="space-y-5 text-xs pt-1">
               {/* Not Cited or Quoted - Red with overlapping documents */}
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#d93829] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-[#d93829] flex items-center justify-center shrink-0 shadow-xs">
                   <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white">
                     <rect x="7.5" y="3.5" width="10" height="13" rx="1" fill="white" opacity="0.65" />
                     <rect x="4.5" y="6.5" width="10" height="13" rx="1" fill="white" />
                   </svg>
                 </span>
-                <div className="leading-tight">
+                <div className="leading-snug">
                   <div className="font-bold text-black text-[11.5px]">
                     {matchGroups.notCitedOrQuoted} Not Cited or Quoted &nbsp;<span className="font-bold text-black">{matchGroups.notCitedOrQuotedScore ?? plagScore}%</span>
                   </div>
-                  <div className="text-[10.5px] text-slate-500 mt-0.5">
+                  <div className="text-[10.5px] text-slate-500 mt-1">
                     Matches with neither in-text citation nor quotation marks
                   </div>
                 </div>
               </div>
 
               {/* Missing Quotations - Orange with quotation marks */}
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#f58220] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-[#f58220] flex items-center justify-center shrink-0 shadow-xs">
                   <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 fill-white">
                     <path d="M4.5 17C3.5 16 3 14.8 3 13c0-3.5 2.5-6.5 6-8l.9 1.4C6.6 8.2 6 10.5 5.7 12c.5-.3 1.2-.4 1.9-.3 1.8.2 3.2 1.6 3.2 3.5 0 2-1.6 3.5-3.5 3.5-1 0-2.1-.5-2.8-1.7zm10 0c-1-1-1.5-2.2-1.5-4 0-3.5 2.5-6.5 6-8l.9 1.4c-3.3 1.8-3.9 4.1-4.2 5.6.5-.3 1.2-.4 1.9-.3 1.8.2 3.2 1.6 3.2 3.5 0 2-1.6 3.5-3.5 3.5-1 0-2.1-.5-2.8-1.7z" />
                   </svg>
                 </span>
-                <div className="leading-tight">
+                <div className="leading-snug">
                   <div className="font-bold text-black text-[11.5px]">
                     {matchGroups.missingQuotations} Missing Quotations &nbsp;<span className="font-bold text-black">{matchGroups.missingQuotationsScore ?? 0}%</span>
                   </div>
-                  <div className="text-[10.5px] text-slate-500 mt-0.5">
+                  <div className="text-[10.5px] text-slate-500 mt-1">
                     Matches that are still very similar to source material
                   </div>
                 </div>
               </div>
 
               {/* Missing Citation - Yellow with 3 horizontal bars */}
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#fbb034] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-[#fbb034] flex items-center justify-center shrink-0 shadow-xs">
                   <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white">
                     <rect x="4" y="6" width="16" height="2.2" rx="1.1" />
                     <rect x="4" y="10.9" width="16" height="2.2" rx="1.1" />
                     <rect x="4" y="15.8" width="16" height="2.2" rx="1.1" />
                   </svg>
                 </span>
-                <div className="leading-tight">
+                <div className="leading-snug">
                   <div className="font-bold text-black text-[11.5px]">
                     {matchGroups.missingCitation} Missing Citation &nbsp;<span className="font-bold text-black">{matchGroups.missingCitationScore ?? 0}%</span>
                   </div>
-                  <div className="text-[10.5px] text-slate-500 mt-0.5">
+                  <div className="text-[10.5px] text-slate-500 mt-1">
                     Matches that have quotation marks, but no in-text citation
                   </div>
                 </div>
               </div>
 
               {/* Cited and Quoted - Green with Graduation Cap */}
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#2e7d32] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-[#2e7d32] flex items-center justify-center shrink-0 shadow-xs">
                   <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white">
                     <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z" />
                   </svg>
                 </span>
-                <div className="leading-tight">
+                <div className="leading-snug">
                   <div className="font-bold text-black text-[11.5px]">
                     {matchGroups.citedAndQuoted} Cited and Quoted &nbsp;<span className="font-bold text-black">{matchGroups.citedAndQuotedScore ?? 0}%</span>
                   </div>
-                  <div className="text-[10.5px] text-slate-500 mt-0.5">
+                  <div className="text-[10.5px] text-slate-500 mt-1">
                     Matches with in-text citation present, but no quotation marks
                   </div>
                 </div>
@@ -633,13 +639,13 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
         <div className="border-b border-slate-200 pb-2" />
 
         {/* Integrity Flags Section (Below lower underline) */}
-        <div className="pt-2">
+        <div className="pt-2 flex-1 flex flex-col">
           <h3 className="text-[12.5px] font-bold text-slate-900 mb-2.5 tracking-tight">
             Integrity Flags
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-            <div>
+          <div className="flex gap-6 flex-1">
+            <div className="flex-1">
               <div className="text-[11.5px] font-bold text-slate-900">
                 0 Integrity Flags for Review
               </div>
@@ -649,7 +655,7 @@ export const TurnitinIntegrityOverviewPage: React.FC<{
             </div>
 
             {/* Right Darker Blue Info Box with black text and further reduced font size */}
-            <div className="bg-[#d5ebf9] border border-[#85c6ea] rounded-xl p-3 text-[8.5px] space-y-1.5 leading-snug shadow-none text-black">
+            <div className="flex-1 bg-[#d5ebf9] border border-[#85c6ea] rounded-xl px-3 pt-3.5 pb-3 text-[8.5px] space-y-1.5 leading-snug shadow-none text-black flex flex-col justify-start">
               <p className="font-normal text-black leading-snug">
                 Our system's algorithms look deeply at a document for any inconsistencies that
                 would set it apart from a normal submission. If we notice something strange, we flag
@@ -782,78 +788,78 @@ export const TurnitinTopSourcesPage: React.FC<{
             {/* Top Half: 2-Column Summary */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
               {/* Column 1: Match Groups */}
-              <div className="space-y-2.5">
+              <div className="space-y-3.5">
                 <h3 className="text-[15.5px] font-bold text-slate-900 tracking-tight">
                   Match Groups
                 </h3>
 
-                <div className="space-y-2 text-xs">
+                <div className="space-y-4 text-xs pt-1">
                   {/* Not Cited or Quoted - Red with overlapping documents */}
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-4.5 h-4.5 rounded-full bg-[#d93829] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4.5 h-4.5 rounded-full bg-[#d93829] flex items-center justify-center shrink-0 shadow-xs">
                       <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 fill-white">
                         <rect x="7.5" y="3.5" width="10" height="13" rx="1" fill="white" opacity="0.65" />
                         <rect x="4.5" y="6.5" width="10" height="13" rx="1" fill="white" />
                       </svg>
                     </span>
-                    <div className="leading-tight">
+                    <div className="leading-snug">
                       <div className="font-bold text-black text-[11px]">
                         {matchGroups.notCitedOrQuoted || 51} Not Cited or Quoted &nbsp;<span className="font-bold text-black">{clampSimilarityScore(matchGroups.notCitedOrQuotedScore ?? report.plagiarismScore ?? 1)}%</span>
                       </div>
-                      <div className="text-[9.5px] text-slate-500 mt-0.5">
+                      <div className="text-[9.5px] text-slate-500 mt-1">
                         Matches with neither in-text citation nor quotation marks
                       </div>
                     </div>
                   </div>
 
                   {/* Missing Quotations - Orange with quotes */}
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-4.5 h-4.5 rounded-full bg-[#f58220] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4.5 h-4.5 rounded-full bg-[#f58220] flex items-center justify-center shrink-0 shadow-xs">
                       <svg viewBox="0 0 24 24" className="w-2 h-2 fill-white">
                         <path d="M4.5 17C3.5 16 3 14.8 3 13c0-3.5 2.5-6.5 6-8l.9 1.4C6.6 8.2 6 10.5 5.7 12c.5-.3 1.2-.4 1.9-.3 1.8.2 3.2 1.6 3.2 3.5 0 2-1.6 3.5-3.5 3.5-1 0-2.1-.5-2.8-1.7zm10 0c-1-1-1.5-2.2-1.5-4 0-3.5 2.5-6.5 6-8l.9 1.4c-3.3 1.8-3.9 4.1-4.2 5.6.5-.3 1.2-.4 1.9-.3 1.8.2 3.2 1.6 3.2 3.5 0 2-1.6 3.5-3.5 3.5-1 0-2.1-.5-2.8-1.7z" />
                       </svg>
                     </span>
-                    <div className="leading-tight">
+                    <div className="leading-snug">
                       <div className="font-bold text-black text-[11px]">
                         {matchGroups.missingQuotations} Missing Quotations &nbsp;<span className="font-bold text-black">{matchGroups.missingQuotationsScore ?? 0}%</span>
                       </div>
-                      <div className="text-[9.5px] text-slate-500 mt-0.5">
+                      <div className="text-[9.5px] text-slate-500 mt-1">
                         Matches that are still very similar to source material
                       </div>
                     </div>
                   </div>
 
                   {/* Missing Citation - Yellow with 3 bars */}
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-4.5 h-4.5 rounded-full bg-[#fbb034] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4.5 h-4.5 rounded-full bg-[#fbb034] flex items-center justify-center shrink-0 shadow-xs">
                       <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 fill-white">
                         <rect x="4" y="6" width="16" height="2.2" rx="1.1" />
                         <rect x="4" y="10.9" width="16" height="2.2" rx="1.1" />
                         <rect x="4" y="15.8" width="16" height="2.2" rx="1.1" />
                       </svg>
                     </span>
-                    <div className="leading-tight">
+                    <div className="leading-snug">
                       <div className="font-bold text-black text-[11px]">
                         {matchGroups.missingCitation} Missing Citation &nbsp;<span className="font-bold text-black">{matchGroups.missingCitationScore ?? 0}%</span>
                       </div>
-                      <div className="text-[9.5px] text-slate-500 mt-0.5">
+                      <div className="text-[9.5px] text-slate-500 mt-1">
                         Matches that have quotation marks, but no in-text citation
                       </div>
                     </div>
                   </div>
 
                   {/* Cited and Quoted - Green with Cap */}
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-4.5 h-4.5 rounded-full bg-[#2e7d32] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4.5 h-4.5 rounded-full bg-[#2e7d32] flex items-center justify-center shrink-0 shadow-xs">
                       <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 fill-white">
                         <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z" />
                       </svg>
                     </span>
-                    <div className="leading-tight">
+                    <div className="leading-snug">
                       <div className="font-bold text-black text-[11px]">
                         {matchGroups.citedAndQuoted} Cited and Quoted &nbsp;<span className="font-bold text-black">{matchGroups.citedAndQuotedScore ?? 0}%</span>
                       </div>
-                      <div className="text-[9.5px] text-slate-500 mt-0.5">
+                      <div className="text-[9.5px] text-slate-500 mt-1">
                         Matches with in-text citation present, but no quotation marks
                       </div>
                     </div>

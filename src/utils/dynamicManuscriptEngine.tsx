@@ -12,12 +12,18 @@ import {
   isTableHeadingOrCaption,
   isTableRowOrData,
   isTableText,
+  isFigureOrGraphText,
+  isMainHeadingText,
+  isGlossaryOrTermTableText,
   isQuoteText,
   isBibliographyHeading,
   isCitationLine,
   isBibliographyOrReferenceText,
   isExcludedFromHighlighting,
   clampSimilarityScore,
+  countWords,
+  selectIndicesForWordShare,
+  splitIntoSentences,
 } from './documentParser';
 import { getInstitutionName } from './institutionName';
 
@@ -197,14 +203,24 @@ export function paginateDocumentForTurnitin(
     : 0;
 
   // Track sentence index for consistent highlight assignment
-  const sentenceList: { text: string; paraIdx: number; isToc: boolean; isQuote: boolean; isBib: boolean; isTable: boolean }[] = [];
+  const sentenceList: {
+    text: string;
+    paraIdx: number;
+    isToc: boolean;
+    isQuote: boolean;
+    isBib: boolean;
+    isTable: boolean;
+    isFigure: boolean;
+    isHeading: boolean;
+  }[] = [];
   let inBibSection = false;
   let inTocSection = false;
   let inTableBlock = false;
+  let inFigureBlock = false;
 
   const splitParagraphs = rawParagraphs.map((paraText, pIdx) => {
     const trimmedPara = paraText.trim();
-    // Check if paragraph is bibliography, TOC, or Table
+    // Check if paragraph is bibliography, TOC, Table, Figure, or Heading
     if (isBibliographyHeading(trimmedPara) || isBibliographyOrReferenceText(trimmedPara)) {
       inBibSection = true;
     }
@@ -222,16 +238,33 @@ export function paginateDocumentForTurnitin(
 
     if (isTableHeadingOrCaption(trimmedPara) || isTableText(trimmedPara)) {
       inTableBlock = true;
-    } else if (inTableBlock && !trimmedPara.includes('|') && !trimmedPara.includes('\t')) {
+    } else if (
+      inTableBlock &&
+      (isMainHeadingText(trimmedPara) || /^\d+(\.\d+)*\.?\s+[A-Z]/.test(trimmedPara))
+    ) {
       inTableBlock = false;
     }
 
+    if (isFigureOrGraphText(trimmedPara)) {
+      inFigureBlock = true;
+    } else if (
+      inFigureBlock &&
+      (isMainHeadingText(trimmedPara) ||
+        isTableHeadingOrCaption(trimmedPara) ||
+        (trimmedPara.length >= 90 && /[.!?]/.test(trimmedPara)))
+    ) {
+      inFigureBlock = false;
+    }
+
     const isHeading =
+      isMainHeadingText(trimmedPara) ||
       /^[0-9]\.\s|^Abstract:|^Conclusion:|^References:|^References$|^Bibliography|^Figure\s[0-9]/i.test(
         paraText
       );
-    const sentences = paraText.match(/[^.!?]+[.!?]+(\s+|$)|[^.!?]+$/g) || [paraText];
-    const cleanedSentences = sentences.map(s => s.trim()).filter(s => s.length > 5);
+    const sentences = splitIntoSentences(paraText);
+    const cleanedSentences = (sentences.length > 0 ? sentences : [paraText])
+      .map(s => s.trim())
+      .filter(s => s.length > 5);
 
     cleanedSentences.forEach(s => {
       const isBib =
@@ -252,8 +285,24 @@ export function paginateDocumentForTurnitin(
         isTableRowOrData(s) ||
         isTableText(s) ||
         isTableText(paraText);
+      const isFigure =
+        inFigureBlock || isFigureOrGraphText(s) || isFigureOrGraphText(paraText);
+      const isSentenceHeading =
+        isHeading ||
+        isMainHeadingText(s) ||
+        isGlossaryOrTermTableText(s) ||
+        isGlossaryOrTermTableText(paraText);
       const isQuote = isQuoteText(s);
-      sentenceList.push({ text: s, paraIdx: pIdx, isToc, isQuote, isBib, isTable });
+      sentenceList.push({
+        text: s,
+        paraIdx: pIdx,
+        isToc,
+        isQuote,
+        isBib,
+        isTable: isTable || isGlossaryOrTermTableText(s) || isGlossaryOrTermTableText(paraText),
+        isFigure,
+        isHeading: isSentenceHeading,
+      });
     });
 
     return {
@@ -265,46 +314,30 @@ export function paginateDocumentForTurnitin(
 
   const totalSentences = sentenceList.length;
 
-  // Identify eligible candidate sentences for highlighting:
-  // Strictly NEVER highlight Table of Contents, Tables, or References!
-  // Also exclude quotes if excludeQuotes is active.
+  // Identify eligible candidate sentences for highlighting (AI and Similarity):
+  // NEVER highlight TOC, Tables, Images, Graphs/Figures, References, or main headings.
   const eligibleIndices: number[] = [];
   for (let i = 0; i < totalSentences; i++) {
     const item = sentenceList[i];
-    if (item.isToc || item.isTable || item.isBib || isExcludedFromHighlighting(item.text)) continue;
+    if (
+      item.isToc ||
+      item.isTable ||
+      item.isBib ||
+      item.isFigure ||
+      item.isHeading ||
+      isExcludedFromHighlighting(item.text)
+    ) {
+      continue;
+    }
     if (excludeQuotes && item.isQuote) continue;
     eligibleIndices.push(i);
   }
 
-  const aiRangesBySentence = new Map<number, { start: number; end: number }>();
-  if (!isSimilarity && aiScore > 20) {
-    const wordPattern = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
-    const wordCounts = eligibleIndices.map(index =>
-      sentenceList[index].text.match(wordPattern)?.length ?? 0
-    );
-    const totalEligibleWords = wordCounts.reduce((total, count) => total + count, 0);
-    const targetWords = Math.round(totalEligibleWords * aiScore / 100);
-    let wordsSeen = 0;
-
-    eligibleIndices.forEach(sentenceIndex => {
-      const sentence = sentenceList[sentenceIndex].text;
-      const words = Array.from(sentence.matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu));
-      const nextWordsSeen = wordsSeen + words.length;
-      const startTarget = Math.round(wordsSeen * aiScore / 100);
-      const endTarget = Math.round(nextWordsSeen * aiScore / 100);
-      const wordsToHighlight = Math.min(endTarget - startTarget, targetWords - startTarget);
-      wordsSeen = nextWordsSeen;
-
-      if (wordsToHighlight <= 0) return;
-
-      const firstWord = Math.floor((words.length - wordsToHighlight) / 2);
-      const start = words[firstWord].index;
-      const lastWord = words[firstWord + wordsToHighlight - 1];
-      if (start === undefined || lastWord.index === undefined) return;
-      aiRangesBySentence.set(sentenceIndex, {
-        start,
-        end: lastWord.index + lastWord[0].length,
-      });
+  const aiHighlightedSentences = new Set<number>();
+  if (!isSimilarity && aiScore > 20 && eligibleIndices.length > 0) {
+    const wordCounts = eligibleIndices.map(index => countWords(sentenceList[index].text));
+    selectIndicesForWordShare(wordCounts, aiScore).forEach(localIndex => {
+      aiHighlightedSentences.add(eligibleIndices[localIndex]);
     });
   }
 
@@ -356,7 +389,15 @@ export function paginateDocumentForTurnitin(
     sp.sentences.forEach(sText => {
       const sIdx = currentSentenceIndex++;
       const item = sentenceList[sIdx];
-      const isExcluded = item?.isToc || item?.isTable || item?.isBib || isExcludedFromHighlighting(sText) || isExcludedFromHighlighting(sp.rawText);
+      const isExcluded =
+        item?.isToc ||
+        item?.isTable ||
+        item?.isBib ||
+        item?.isFigure ||
+        item?.isHeading ||
+        sp.isHeading ||
+        isExcludedFromHighlighting(sText) ||
+        isExcludedFromHighlighting(sp.rawText);
 
       const plagInfo = !isExcluded ? plagSentenceIndices.get(sIdx) : undefined;
       const sentenceStart = sp.rawText.indexOf(sText, paragraphSearchOffset);
@@ -369,25 +410,11 @@ export function paginateDocumentForTurnitin(
           isPlagiarized: true,
           sourceIndex: plagInfo.sourceIndex,
         });
-      } else if (!isSimilarity && !isExcluded && aiScore > 20 && sentenceStart !== -1) {
-        const aiRange = aiRangesBySentence.get(sIdx);
-        const sentenceRanges = aiRange ? [aiRange] : [];
-
-        let textOffset = 0;
-        for (const range of sentenceRanges) {
-          if (range.start > textOffset) {
-            segments.push({ text: sText.slice(textOffset, range.start) });
-          }
-          segments.push({
-            text: sText.slice(range.start, range.end),
-            isAi: true,
-          });
-          textOffset = range.end;
-        }
-        if (textOffset < sText.length) {
-          segments.push({ text: sText.slice(textOffset) });
-        }
-        segments.push({ text: ' ' });
+      } else if (!isSimilarity && !isExcluded && aiScore > 20 && aiHighlightedSentences.has(sIdx)) {
+        segments.push({
+          text: `${sText} `,
+          isAi: true,
+        });
       } else {
         segments.push({
           text: sText + ' ',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { isAdminEmail, useApp } from '../context/AppContext';
 import {
   Bell,
@@ -246,7 +246,7 @@ export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix })
           <button
             onClick={() => signOutAuth()}
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-            title="Sign Out of TurnitScope"
+            title="Sign Out of Originality Check"
             id="btn-header-signout"
           >
             <LogOut className="w-3.5 h-3.5" />

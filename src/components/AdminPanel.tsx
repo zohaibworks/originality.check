@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { isAdminEmail, useApp } from '../context/AppContext';
 import { ADMIN_EMAIL } from '../lib/firebase';
 import { User } from '../types';
-import { TurnitScopeLogo } from './TurnitScopeLogo';
+import { OriginalityCheckLogo } from './OriginalityCheckLogo';
 import {
   Shield,
   Coins,
@@ -195,7 +195,7 @@ export const AdminPanel: React.FC = () => {
       {/* Top Admin Navigation Header */}
       <header className="bg-slate-950/80 border-b border-slate-800 px-3 sm:px-6 py-3 sm:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sticky top-0 z-30 backdrop-blur-md">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <TurnitScopeLogo size="sm" variant="dark" showSubtitle={false} />
+          <OriginalityCheckLogo size="sm" variant="dark" showSubtitle={false} />
           <div className="h-5 w-px bg-slate-800 hidden sm:block" />
           <div className="flex items-center gap-2 min-w-0">
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20 flex items-center gap-1.5 whitespace-nowrap">
@@ -958,7 +958,7 @@ export const AdminPanel: React.FC = () => {
                 Delete User Account?
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                You are about to delete this account from TurnitScope. This will immediately remove all credentials, credit balances, and data.
+                You are about to delete this account from Originality Check. This will immediately remove all credentials, credit balances, and data.
               </p>
             </div>
 

@@ -1,5 +1,5 @@
 /**
- * TurnitScope PDF Merge & Structure Verification Script
+ * Originality Check PDF Merge & Structure Verification Script
  * 
  * Verifies that the PDF generator directly merges the original document pages
  * with the generated Turnitin report covers without re-rendering or reconstruction.
@@ -93,7 +93,7 @@ async function verifyPdfMergePipeline(mode: 'similarity' | 'ai') {
 }
 
 async function runAllVerifications() {
-  console.log('🚀 Running TurnitScope PDF Verification Suite...');
+  console.log('🚀 Running Originality Check PDF Verification Suite...');
   await verifyPdfMergePipeline('similarity');
   await verifyPdfMergePipeline('ai');
   console.log(`\n🎉 All PDF generation and merge verifications PASSED!\n`);

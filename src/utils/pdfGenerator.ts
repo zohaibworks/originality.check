@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+﻿import jsPDF from 'jspdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ScanReport } from '../types';
@@ -87,7 +87,7 @@ const GRAD_CAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24
 </svg>`;
 
 const INSTITUTION_NAME_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 40" width="1120" height="80">
-  <text x="0" y="31" font-family="Arial, sans-serif" font-size="30" fill="#475569">${DEFAULT_INSTITUTION_NAME}</text>
+  <text x="0" y="31" font-family="Arial, sans-serif" font-size="30" fill="#64748b">${DEFAULT_INSTITUTION_NAME}</text>
 </svg>`;
 
 const CAUTION_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="120" height="120">
@@ -230,7 +230,7 @@ async function renderBoldUnicodeText(text: string): Promise<{
   }
 
   headingContext.font = '700 112px "Times New Roman", Georgia, "Cambria Math", "Segoe UI Symbol", serif';
-  headingContext.fillStyle = '#000000';
+  headingContext.fillStyle = '#334155';
   headingContext.textBaseline = 'alphabetic';
   headingContext.fillText(text, padding, 110);
 
@@ -266,7 +266,7 @@ async function mergeTurnitinCoverWithUserPdf(
   report: ScanReport,
   mode: 'ai' | 'similarity'
 ): Promise<Uint8Array> {
-  console.group('[TurnitScope PDF Verification Engine]');
+  console.group('[Originality Check PDF Verification Engine]');
   console.log('⏳ Merging generated Turnitin cover with original user document...');
 
   const coverPdfDoc = await PDFDocument.load(coverPdfBytes);
@@ -2075,7 +2075,8 @@ export async function downloadReportPdf(
       : layout.totalPages;
 
   // Helper to draw match group badges
-  const drawMatchGroupBadge = (type: 'red' | 'orange' | 'yellow' | 'green', x: number, yCenter: number) => {
+  // yTitle = title baseline; badge is centered against title + subtitle block
+  const drawMatchGroupBadge = (type: 'red' | 'orange' | 'yellow' | 'green', x: number, yTitle: number) => {
     const pngMap = {
       red: badgeRedPng,
       orange: badgeOrangePng,
@@ -2083,8 +2084,10 @@ export async function downloadReportPdf(
       green: badgeGreenPng,
     };
     const png = pngMap[type];
+    // Midpoint of title (yTitle) and subtitle (yTitle+9) ≈ yTitle+2.25; badge half-height 4.75
+    const badgeTop = yTitle - 2.5;
     if (png) {
-      doc.addImage(png, 'PNG', x, yCenter - 8.5, 9.5, 9.5);
+      doc.addImage(png, 'PNG', x, badgeTop, 9.5, 9.5);
     } else {
       const colorMap = {
         red: [217, 56, 41],
@@ -2094,7 +2097,7 @@ export async function downloadReportPdf(
       };
       const c = colorMap[type];
       doc.setFillColor(c[0], c[1], c[2]);
-      doc.circle(x + 4.5, yCenter - 3.5, 4.5, 'F');
+      doc.circle(x + 4.75, badgeTop + 4.75, 4.75, 'F');
     }
   };
 
@@ -2174,17 +2177,17 @@ export async function downloadReportPdf(
   // Author Initials
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(26);
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(51, 65, 85);
   doc.text(authorInitials, margin, y);
 
   // Title
   y += 24;
-  doc.setFontSize(14);
+  doc.setFontSize(12);
   const titleLines = doc.splitTextToSize(report.fileName || report.title, contentWidth);
   doc.text(titleLines, margin, y);
 
   // Institution with icon
-  y += titleLines.length * 18 + 6;
+  y += titleLines.length * 15 + 6;
   if (!institutionNamePng) {
     throw new Error('Could not render the institution name for the report PDF.');
   }
@@ -2212,8 +2215,8 @@ export async function downloadReportPdf(
   // Document Details Section Heading
   y += 30;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(11.5);
+  doc.setTextColor(51, 65, 85);
   doc.text('Document Details', margin, y);
 
   y += 22;
@@ -2230,9 +2233,9 @@ export async function downloadReportPdf(
 
   let leftY = y;
   for (const item of leftCol) {
-    doc.setTextColor(71, 85, 105); // clear readable label
+    doc.setTextColor(100, 116, 139);
     doc.text(item.label, margin, leftY);
-    doc.setTextColor(0, 0, 0); // dark black value
+    doc.setTextColor(51, 65, 85);
     doc.text(item.val, margin, leftY + 11);
     leftY += 30;
   }
@@ -2248,15 +2251,15 @@ export async function downloadReportPdf(
   ];
   const boxPaddingX = 10;
   const boxWidth = Math.max(...summaryLines.map(line => doc.getTextWidth(line))) + boxPaddingX * 2;
-  const boxHeight = 48;
+  const boxHeight = 64;
   const rightX = pageWidth - margin - boxWidth - 40;
   doc.setFillColor(240, 243, 246);
   doc.setDrawColor(226, 230, 235);
   doc.roundedRect(rightX, y - 2, boxWidth, boxHeight, 6, 6, 'FD');
 
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(51, 65, 85);
   summaryLines.forEach((line, index) => {
-    doc.text(line, rightX + boxPaddingX, y + 10 + index * 14);
+    doc.text(line, rightX + boxPaddingX, y + 12 + index * 18);
   });
 
   // ----------------------------------------------------
@@ -2269,16 +2272,28 @@ export async function downloadReportPdf(
     drawHeaderAndFooter(2, 'AI-Writing Overview');
 
     // Left: Headline (with 2 vertical gaps below top header divider line at y=42)
-    y = 86;
+    y = 94;
     const isBelowThreshold = report.aiScore >= 1 && report.aiScore <= 20;
     const scoreDisplay = isBelowThreshold ? '*%' : `${report.aiScore}%`;
     const heading = await renderBoldUnicodeText(toBoldUnicode(`${scoreDisplay} detected as AI`));
-    const headingHeight = 22;
+    const headingHeight = 19;
     const headingWidth = heading.width / heading.height * headingHeight;
-    doc.addImage(heading.dataUrl, 'PNG', margin, y - headingHeight + 3, headingWidth, headingHeight);
+    if (isBelowThreshold) {
+      // Draw *% in Helvetica Bold (standard asterisk) then rest in Times Bold, font size 20
+      const fontSize = 18;
+      doc.setFontSize(fontSize);
+      doc.setTextColor(51, 65, 85);
+      doc.setFont('helvetica', 'bold');
+      const prefixWidth = doc.getTextWidth('*%');
+      doc.text('*%', margin, y - 4);
+      doc.setFont('times', 'bold');
+      doc.text(' detected as AI', margin + prefixWidth, y - 4);
+    } else {
+      doc.addImage(heading.dataUrl, 'PNG', margin, y - headingHeight + 3, headingWidth, headingHeight);
+    }
 
     // Left: Score-specific AI detection explanation.
-    y += 14;
+    y += isBelowThreshold ? 5 : 8;
     if (isBelowThreshold) {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 0, 0);
@@ -2299,7 +2314,7 @@ export async function downloadReportPdf(
       doc.text(aiNotice, margin, y, { lineHeightFactor: 1.25 });
     } else {
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.2);
+      doc.setFontSize(6.7);
       doc.setTextColor(0, 0, 0);
       const aiNotice = doc.splitTextToSize(
         'The percentage indicates the combined amount of likely AI-generated text as well as likely AI-generated text that was also likely revised by AI.',
@@ -2337,7 +2352,7 @@ export async function downloadReportPdf(
     const aiAnnotations = report.snippets
       .filter(snippet => snippet.type === 'ai_generated')
       .map(snippet => snippet.text);
-    if (report.aiScore > 0 || aiAnnotations.length > 0) {
+    if ((report.aiScore > 0 || aiAnnotations.length > 0) && !isBelowThreshold) {
       y += 17;
       doc.setFillColor(6, 182, 212);
       doc.circle(margin + 6, y - 2, 6, 'F');
@@ -2409,7 +2424,8 @@ export async function downloadReportPdf(
     doc.setTextColor(100, 116, 139);
     doc.text('The combined total of all matches, including overlapping sources, for each database.', margin, y);
 
-    y += 14;
+    // One line gap below Overall Similarity before Filtered section
+    y += 24;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
@@ -2434,7 +2450,7 @@ export async function downloadReportPdf(
     doc.text('Match Groups', margin, y);
     doc.text('Top Sources', margin + 280, y);
 
-    y += 14;
+    y += 16;
     // Badge 1: Red
     drawMatchGroupBadge('red', margin, y);
     doc.setFont('helvetica', 'bold');
@@ -2445,7 +2461,7 @@ export async function downloadReportPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
-    doc.text('Matches with neither in-text citation nor quotation marks', margin + 14, y + 8);
+    doc.text('Matches with neither in-text citation nor quotation marks', margin + 14, y + 9);
 
     // Top Sources 3 items with compact vertical gap matching reference
     const topSourcesStartY = y;
@@ -2453,7 +2469,7 @@ export async function downloadReportPdf(
     drawSourceDistRow(report.sourceDistribution?.publications || 15, bookPng, 'Publications', margin + 280, topSourcesStartY + 13);
     drawSourceDistRow(report.sourceDistribution?.studentPapers || 0, studentPng, 'Submitted works (Student Papers)', margin + 280, topSourcesStartY + 26);
 
-    y += 22;
+    y += 26;
     // Badge 2: Orange
     drawMatchGroupBadge('orange', margin, y);
     doc.setFont('helvetica', 'bold');
@@ -2463,9 +2479,9 @@ export async function downloadReportPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
-    doc.text('Matches that are still very similar to source material', margin + 14, y + 8);
+    doc.text('Matches that are still very similar to source material', margin + 14, y + 9);
 
-    y += 22;
+    y += 26;
     // Badge 3: Yellow
     drawMatchGroupBadge('yellow', margin, y);
     doc.setFont('helvetica', 'bold');
@@ -2475,9 +2491,9 @@ export async function downloadReportPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
-    doc.text('Matches that have quotation marks, but no in-text citation', margin + 14, y + 8);
+    doc.text('Matches that have quotation marks, but no in-text citation', margin + 14, y + 9);
 
-    y += 22;
+    y += 26;
     // Badge 4: Green
     drawMatchGroupBadge('green', margin, y);
     doc.setFont('helvetica', 'bold');
@@ -2487,10 +2503,10 @@ export async function downloadReportPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
-    doc.text('Matches with in-text citation present, but no quotation marks', margin + 14, y + 8);
+    doc.text('Matches with in-text citation present, but no quotation marks', margin + 14, y + 9);
 
     // BOTTOM UNDERLINE
-    y += 18;
+    y += 20;
     doc.setDrawColor(226, 232, 240);
     doc.line(margin, y, pageWidth - margin, y);
 
@@ -2515,7 +2531,7 @@ export async function downloadReportPdf(
     const flagBoxX = margin + 240;
     const flagBoxY = y - 4;
     const flagBoxW = 220;
-    const flagBoxH = 46;
+    const flagBoxH = 52;
     doc.setFillColor(213, 235, 249);
     doc.setDrawColor(133, 198, 234);
     doc.roundedRect(flagBoxX, flagBoxY, flagBoxW, flagBoxH, 4, 4, 'FD');
@@ -2527,13 +2543,14 @@ export async function downloadReportPdf(
       "Our system's algorithms look deeply at a document for any inconsistencies that would set it apart from a normal submission. If we notice something strange, we flag it for you to review.",
       208
     );
-    doc.text(p1, flagBoxX + 6, flagBoxY + 7.5, { lineHeightFactor: 1.15 });
+    // One line of top gap (~6.7) so text isn't flush against the upper border
+    doc.text(p1, flagBoxX + 6, flagBoxY + 14, { lineHeightFactor: 1.15 });
 
     const p2 = doc.splitTextToSize(
       "A Flag is not necessarily an indicator of a problem. However, we'd recommend you focus your attention there for further review.",
       208
     );
-    doc.text(p2, flagBoxX + 6, flagBoxY + 29.5, { lineHeightFactor: 1.15 });
+    doc.text(p2, flagBoxX + 6, flagBoxY + 36, { lineHeightFactor: 1.15 });
   }
 
   // ----------------------------------------------------
@@ -2592,7 +2609,7 @@ export async function downloadReportPdf(
         doc.text('Match Groups', margin, y);
         doc.text('Top Sources', margin + 280, y);
 
-        y += 14;
+        y += 16;
         // Red Match Group
         drawMatchGroupBadge('red', margin, y);
         doc.setFont('helvetica', 'bold');
@@ -2602,7 +2619,7 @@ export async function downloadReportPdf(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text('Matches with neither in-text citation nor quotation marks', margin + 14, y + 8);
+        doc.text('Matches with neither in-text citation nor quotation marks', margin + 14, y + 9);
 
         // Top Sources 3 items with compact vertical gap matching reference
         const topSourcesStartY = y;
@@ -2610,7 +2627,7 @@ export async function downloadReportPdf(
         drawSourceDistRow(report.sourceDistribution?.publications || 15, bookPng, 'Publications', margin + 280, topSourcesStartY + 13);
         drawSourceDistRow(report.sourceDistribution?.studentPapers || 0, studentPng, 'Submitted works (Student Papers)', margin + 280, topSourcesStartY + 26);
 
-        y += 20;
+        y += 24;
         // Orange Match Group
         drawMatchGroupBadge('orange', margin, y);
         doc.setFont('helvetica', 'bold');
@@ -2620,9 +2637,9 @@ export async function downloadReportPdf(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text('Matches that are still very similar to source material', margin + 14, y + 8);
+        doc.text('Matches that are still very similar to source material', margin + 14, y + 9);
 
-        y += 20;
+        y += 24;
         // Yellow Match Group
         drawMatchGroupBadge('yellow', margin, y);
         doc.setFont('helvetica', 'bold');
@@ -2632,9 +2649,9 @@ export async function downloadReportPdf(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text('Matches that have quotation marks, but no in-text citation', margin + 14, y + 8);
+        doc.text('Matches that have quotation marks, but no in-text citation', margin + 14, y + 9);
 
-        y += 20;
+        y += 24;
         // Green Match Group
         drawMatchGroupBadge('green', margin, y);
         doc.setFont('helvetica', 'bold');
@@ -2644,10 +2661,10 @@ export async function downloadReportPdf(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text('Matches with in-text citation present, but no quotation marks', margin + 14, y + 8);
+        doc.text('Matches with in-text citation present, but no quotation marks', margin + 14, y + 9);
 
         // HORIZONTAL DIVIDER
-        y += 18;
+        y += 20;
         doc.setDrawColor(226, 232, 240);
         doc.line(margin, y, pageWidth - margin, y);
         y += 14;

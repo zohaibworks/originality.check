@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { getGoogleAuthErrorMessage, isUnauthorizedDomainError } from './firebase.ts';
@@ -46,7 +46,7 @@ test('builds a client profile for new Google users and keeps admin access for ad
   const adminUser = buildUserFromAuthProfile({
     uid: 'google-admin',
     email: 'zohaibanwarapp@gmail.com',
-    displayName: 'TurnitScope Admin',
+    displayName: 'Originality Check Admin',
     photoURL: null,
     emailVerified: true,
     providerData: [{ providerId: 'google.com', email: 'zohaibanwarapp@gmail.com' }],

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, ScanReport, ActivationCode, PurchaseKey, CreditTransaction, ScanMode, HighlightedSnippet, MatchedSource } from '../types';
-import { cleanText, generateSmartSnippets, MAX_SIMILARITY_SCORE } from '../utils/documentParser';
+import { cleanText, generateSmartSnippets, MAX_SIMILARITY_SCORE, filterTextForAiScan, isExcludedFromHighlighting, isMainHeadingText, isTableText, isTableOfContentsText, isFigureOrGraphText, isBibliographyOrReferenceText } from '../utils/documentParser';
 import { generateSourcesForDocument } from '../utils/dynamicManuscriptEngine';
 import {
   auth,
@@ -180,11 +180,11 @@ interface AppContextType {
   toggleSidebar: () => void;
 }
 
-const STORAGE_KEY_USER = 'turnitscope_current_user_v1';
-const STORAGE_KEY_USERS = 'turnitscope_users_v1';
-const STORAGE_KEY_REPORTS = 'turnitscope_reports_v1';
-const STORAGE_KEY_CODES = 'turnitscope_codes_v1';
-const STORAGE_KEY_TXNS = 'turnitscope_txns_v1';
+const STORAGE_KEY_USER = 'originality_check_current_user_v1';
+const STORAGE_KEY_USERS = 'originality_check_users_v1';
+const STORAGE_KEY_REPORTS = 'originality_check_reports_v1';
+const STORAGE_KEY_CODES = 'originality_check_codes_v1';
+const STORAGE_KEY_TXNS = 'originality_check_txns_v1';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ADMIN_PAGE_SIZE = 20;
 const ADMIN_ACTIVITY_PAGE_SIZE = 10;
@@ -366,8 +366,8 @@ const INITIAL_CURRENT_USER: User = {
 };
 
 export const ADMIN_USER_INITIAL: User = {
-  id: 'usr-admin-turnitscope',
-  name: 'TurnitScope Admin',
+  id: 'usr-admin-originality-check',
+  name: 'Originality Check Admin',
   email: ADMIN_EMAIL,
   role: 'admin',
   credits: 0,
@@ -866,7 +866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const isAdm = isAdminEmail(fbUser.email);
           const fallbackUser: User = {
             id: fbUser.uid,
-            name: fbUser.displayName || (isAdm ? 'TurnitScope Administrator' : fbUser.email?.split('@')[0]) || 'User',
+            name: fbUser.displayName || (isAdm ? 'Originality Check Administrator' : fbUser.email?.split('@')[0]) || 'User',
             email: fbUser.email || '',
             role: isAdm ? 'admin' : 'client',
             credits: 0,
@@ -1520,7 +1520,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const newUser: User = {
         id: result.user.uid,
-        name: result.user.displayName || (isDefaultAdmin ? 'TurnitScope Administrator' : name.trim()) || cleanEmail.split('@')[0],
+        name: result.user.displayName || (isDefaultAdmin ? 'Originality Check Administrator' : name.trim()) || cleanEmail.split('@')[0],
         email: cleanEmail,
         role: isDefaultAdmin ? 'admin' : 'client',
         credits: 0,
@@ -1591,7 +1591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         const newUser: User = {
           id: result.user.uid,
-          name: result.user.displayName || (isDefaultAdmin ? 'TurnitScope Administrator' : cleanEmail.split('@')[0]),
+          name: result.user.displayName || (isDefaultAdmin ? 'Originality Check Administrator' : cleanEmail.split('@')[0]),
           email: cleanEmail,
           role: isDefaultAdmin ? 'admin' : 'client',
           credits: 0,
@@ -2397,10 +2397,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let aiAnnotations: Array<{ text: string; confidence: number }> = [];
       const aiEnabled = options.mode === 'ai' || options.mode === 'both';
       if (aiEnabled) {
-        if (sampleText.length < 250) {
-          throw new Error('AI or Not requires at least 250 characters for text analysis.');
+        // Filter out TOC, tables, figures/graphs, references, and headings before
+        // sending to the AI API — these sections should never count toward the AI score.
+        const aiScanText = filterTextForAiScan(sampleText);
+
+        if (aiScanText.length < 250) {
+          throw new Error('Not enough body text (after excluding TOC, tables, figures, references, and headings) for AI detection. Please upload a document with more readable body content.');
         }
-        if (sampleText.length > 500_000) {
+        if (aiScanText.length > 500_000) {
           throw new Error("Text exceeds AI or Not's 500,000-character analysis limit.");
         }
 
@@ -2412,7 +2416,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Authorization: `Bearer ${idToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ text: sampleText }),
+          body: JSON.stringify({ text: aiScanText }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -2480,6 +2484,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             aiProbability: Math.round(annotation.confidence * 100),
           }))
           .filter(annotation => annotation.text.length >= 15)
+          // Exclude headings, TOC, tables, figures, and references from AI highlights
+          .filter(annotation => !isExcludedFromHighlighting(annotation.text))
+          .filter(annotation => !isMainHeadingText(annotation.text))
+          .filter(annotation => !isTableOfContentsText(annotation.text))
+          .filter(annotation => !isTableText(annotation.text))
+          .filter(annotation => !isFigureOrGraphText(annotation.text))
+          .filter(annotation => !isBibliographyOrReferenceText(annotation.text))
           .filter((annotation, index, snippets) =>
             snippets.findIndex(candidate =>
               candidate.text.toLowerCase().replace(/\s+/g, ' ').trim() ===

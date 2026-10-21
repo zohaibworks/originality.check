@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { AppProvider, isAdminEmail, useApp } from './context/AppContext';
 import { ClientSidebar } from './components/ClientSidebar';
 import { ClientHeader } from './components/ClientHeader';
@@ -9,14 +9,14 @@ import { ReportModal } from './components/ReportModal';
 import { ScanProgressModal } from './components/ScanProgressModal';
 import { ProfileEditModal } from './components/ProfileEditModal';
 import { AuthGate } from './components/AuthGate';
-import { TurnitScopeLogo } from './components/TurnitScopeLogo';
+import { OriginalityCheckLogo } from './components/OriginalityCheckLogo';
 import { ToastNotificationBanner } from './components/ToastNotificationBanner';
 import { ScanReport } from './types';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const IDLE_WARNING_MS = 30 * 1000;
-const ACTIVITY_STORAGE_PREFIX = 'turnitscope:last-activity:';
+const ACTIVITY_STORAGE_PREFIX = 'originality-check:last-activity:';
 
 const AppContent: React.FC = () => {
   const {
@@ -120,7 +120,7 @@ const AppContent: React.FC = () => {
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-[#0a0f1d] flex flex-col items-center justify-center gap-4 text-slate-100 font-['Plus_Jakarta_Sans',sans-serif]">
-        <TurnitScopeLogo size="lg" showSubtitle={true} />
+        <OriginalityCheckLogo size="lg" showSubtitle={true} />
         <div className="flex items-center gap-2 text-indigo-400 text-sm mt-4">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>Verifying authentication...</span>

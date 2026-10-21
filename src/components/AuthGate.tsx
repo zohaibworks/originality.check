@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TurnitScopeLogo } from './TurnitScopeLogo';
+import { OriginalityCheckLogo } from './OriginalityCheckLogo';
 import {
   ShieldCheck,
   AlertCircle,
@@ -49,7 +49,7 @@ export const AuthGate: React.FC = () => {
         {/* Brand & Security Notice */}
         <div className="text-center space-y-2.5">
           <div className="flex justify-center pb-1">
-            <TurnitScopeLogo size="lg" variant="dark" showSubtitle={true} />
+            <OriginalityCheckLogo size="lg" variant="dark" showSubtitle={true} />
           </div>
 
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-950/90 border border-indigo-500/30 text-indigo-300 text-xs font-semibold shadow-inner">

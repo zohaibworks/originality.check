@@ -4,8 +4,9 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import JSZip from 'jszip';
+import mammoth from 'mammoth';
 
 const execFileAsync = promisify(execFile);
 
@@ -88,6 +89,77 @@ function getLibreOfficeBinary(): string | null {
 }
 
 /**
+ * Fallback: converts DOCX to a plain-text PDF using mammoth + pdf-lib.
+ * Used when LibreOffice is not installed. Layout fidelity is reduced but
+ * text extraction and AI/similarity scanning work correctly.
+ */
+async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDocxResult> {
+  const cleanBase64 = docxBase64.includes(',') ? docxBase64.split(',')[1] : docxBase64;
+  const docxBuffer = Buffer.from(cleanBase64, 'base64');
+
+  // Extract raw text via mammoth
+  const { value: rawText } = await mammoth.extractRawText({ buffer: docxBuffer });
+  if (!rawText || rawText.trim().length < 20) {
+    return { success: false, error: 'Could not extract readable text from this DOCX file.' };
+  }
+
+  // Build a basic PDF with pdf-lib
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontSize = 11;
+  const lineHeight = fontSize * 1.4;
+  const pageWidth = 595;  // A4
+  const pageHeight = 842;
+  const marginX = 60;
+  const marginTop = 60;
+  const marginBottom = 60;
+  const maxWidth = pageWidth - marginX * 2;
+  const linesPerPage = Math.floor((pageHeight - marginTop - marginBottom) / lineHeight);
+
+  // Word-wrap all text lines
+  const paragraphs = rawText.split(/\n/).map(p => p.trim());
+  const wrappedLines: string[] = [];
+  for (const para of paragraphs) {
+    if (!para) { wrappedLines.push(''); continue; }
+    const words = para.split(/\s+/);
+    let current = '';
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
+        current = test;
+      } else {
+        if (current) wrappedLines.push(current);
+        current = word;
+      }
+    }
+    if (current) wrappedLines.push(current);
+    wrappedLines.push(''); // blank line between paragraphs
+  }
+
+  // Paginate
+  let lineIndex = 0;
+  while (lineIndex < wrappedLines.length) {
+    const page = pdfDoc.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - marginTop;
+    for (let i = 0; i < linesPerPage && lineIndex < wrappedLines.length; i++, lineIndex++) {
+      const line = wrappedLines[lineIndex];
+      if (line) {
+        page.drawText(line, { x: marginX, y, size: fontSize, font, color: rgb(0, 0, 0) });
+      }
+      y -= lineHeight;
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  const pageCount = pdfDoc.getPageCount();
+  return {
+    success: true,
+    pdfBase64: Buffer.from(pdfBytes).toString('base64'),
+    pageCount,
+  };
+}
+
+/**
  * Converts a DOCX file directly into an authentic, searchable, vector PDF
  * using server-side headless LibreOffice.
  *
@@ -102,11 +174,8 @@ function getLibreOfficeBinary(): string | null {
 export async function convertDocxToPdf(docxBase64: string, originalFileName = 'document.docx'): Promise<ConvertDocxResult> {
   const libreOfficeBin = getLibreOfficeBinary();
   if (!libreOfficeBin) {
-    console.error('LibreOffice binary not found on server.');
-    return {
-      success: false,
-      error: 'LibreOffice is not installed or accessible on this server.',
-    };
+    console.warn('LibreOffice not found — falling back to mammoth text extraction for DOCX conversion.');
+    return convertDocxToPdfViaMammoth(docxBase64);
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'turnitin-docx-'));

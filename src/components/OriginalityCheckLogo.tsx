@@ -1,6 +1,6 @@
 import React from 'react';
 
-interface TurnitScopeLogoProps {
+interface OriginalityCheckLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   variant?: 'light' | 'dark';
   showSubtitle?: boolean;
@@ -9,7 +9,7 @@ interface TurnitScopeLogoProps {
   className?: string;
 }
 
-export const TurnitScopeLogo: React.FC<TurnitScopeLogoProps> = ({
+export const OriginalityCheckLogo: React.FC<OriginalityCheckLogoProps> = ({
   size = 'md',
   variant = 'light',
   showSubtitle = true,
@@ -21,14 +21,14 @@ export const TurnitScopeLogo: React.FC<TurnitScopeLogoProps> = ({
 
   // Dimension scaling
   const dimensions = {
-    sm: { height: 32, iconSize: 32, titleSize: 'text-xl', subSize: 'text-[9px]' },
-    md: { height: 44, iconSize: 44, titleSize: 'text-2xl', subSize: 'text-[10px]' },
-    lg: { height: 58, iconSize: 58, titleSize: 'text-3xl', subSize: 'text-[12px]' },
-    xl: { height: 72, iconSize: 72, titleSize: 'text-4xl', subSize: 'text-[14px]' },
+    sm: { height: 28, iconSize: 28, titleSize: 'text-base', subSize: 'text-[8px]' },
+    md: { height: 36, iconSize: 36, titleSize: 'text-lg', subSize: 'text-[9px]' },
+    lg: { height: 52, iconSize: 52, titleSize: 'text-2xl', subSize: 'text-[11px]' },
+    xl: { height: 64, iconSize: 64, titleSize: 'text-3xl', subSize: 'text-[13px]' },
   }[size];
 
   return (
-    <div className={`inline-flex items-center gap-3 select-none ${className}`} id="turnitscope-logo">
+    <div className={`inline-flex items-center gap-3 select-none ${className}`} id="originality-check-logo">
       {/* SVG Icon: Graduation Cap + Pixelated Bits + Checked Document */}
       <svg
         viewBox="0 0 160 160"
@@ -145,12 +145,12 @@ export const TurnitScopeLogo: React.FC<TurnitScopeLogoProps> = ({
         </g>
       </svg>
 
-      {/* Brand Text Block: "turnitScope" + Subtitle */}
+      {/* Brand Text Block: "Originality Check" + Subtitle */}
       {!iconOnly && (
-        <div className="flex flex-col justify-center">
-          <div className={`font-extrabold tracking-tight leading-none ${dimensions.titleSize} flex items-center`}>
-            <span className={isDark ? 'text-white' : 'text-[#0c2340]'}>turnit</span>
-            <span className="text-[#0066ff]">Scope</span>
+        <div className="flex flex-col justify-center min-w-0">
+          <div className={`font-extrabold tracking-tight leading-none ${dimensions.titleSize} flex flex-col`}>
+            <span className={isDark ? 'text-white' : 'text-[#0c2340]'}>Originality</span>
+            <span className="text-[#0066ff]">Check</span>
           </div>
 
           {showSubtitle && (

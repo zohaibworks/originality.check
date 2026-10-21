@@ -104,11 +104,11 @@ export function getReportPageLayout(
 export function getReportPdfFileName(report: ScanReport, mode: 'ai' | 'similarity'): string {
   const rawBase = (report.fileName || report.title || 'Turnitin_Report')
     .replace(/\.[^/.]+$/, '')
-    .replace(/[^a-zA-Z0-9_-]/g, '_');
+    .trim();
 
   if (mode === 'similarity') {
-    return `similarity-${rawBase}.pdf`;
+    return `${rawBase}- plag report.pdf`;
   } else {
-    return `ai-${rawBase}.pdf`;
+    return `${rawBase}- ai report.pdf`;
   }
 }

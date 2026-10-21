@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ScanReport, MatchedSource, HighlightedSnippet } from '../types';
-import { TurnitScopeLogo } from './TurnitScopeLogo';
+import { OriginalityCheckLogo } from './OriginalityCheckLogo';
 import { cleanText, MAX_SIMILARITY_SCORE } from '../utils/documentParser';
 import { downloadReportPdf } from '../utils/pdfGenerator';
 import { TurnitinOfficialMultiPageReport } from './TurnitinOfficialMultiPageReport';
@@ -153,7 +153,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
         {/* TOP BAR: Feedback Studio Header */}
         <header className="bg-[#1e293b] text-white px-5 py-3 flex items-center justify-between border-b border-slate-700 shrink-0 z-20">
           <div className="flex items-center gap-4 min-w-0">
-            <TurnitScopeLogo size="sm" variant="dark" showSubtitle={false} />
+            <OriginalityCheckLogo size="sm" variant="dark" showSubtitle={false} />
             <div className="h-5 w-px bg-slate-700 hidden sm:block" />
 
             {/* Document Info */}
