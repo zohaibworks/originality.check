@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: originality-check-api
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AIORNOT_API_KEY
+        sync: false          # you'll paste this in the Render dashboard
+      - key: FRONTEND_ORIGIN
+        value: https://originality-check-pi.vercel.app

@@ -22,12 +22,19 @@ async function startServer() {
     .split(",")
     .map(origin => origin.trim())
     .filter(Boolean);
+
+  // Always allow the production Vercel frontend and localhost in dev
+  const builtInOrigins = [
+    "https://originality-check-pi.vercel.app",
+  ];
+
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     const isLocalDevelopment = process.env.NODE_ENV !== "production"
       && (origin === "http://localhost:3000" || origin === "http://127.0.0.1:3000");
+    const allAllowed = [...builtInOrigins, ...configuredOrigins];
 
-    if (origin && (configuredOrigins.includes(origin) || isLocalDevelopment)) {
+    if (origin && (allAllowed.includes(origin) || isLocalDevelopment)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -47,8 +54,13 @@ async function startServer() {
   });
 
   app.post("/api/ai-detect", async (req, res) => {
-    const result = await analyzeTextWithAiOrNot(req.get("Authorization"), req.body?.text);
-    return res.status(result.status).json(result.body);
+    try {
+      const result = await analyzeTextWithAiOrNot(req.get("Authorization"), req.body?.text);
+      return res.status(result.status).json(result.body);
+    } catch (err: any) {
+      console.error("Unhandled error in /api/ai-detect:", err);
+      return res.status(500).json({ error: "AI detection endpoint returned HTTP 500. No score was generated." });
+    }
   });
 
   // DOCX to PDF conversion using in-memory mammoth and pdf-lib

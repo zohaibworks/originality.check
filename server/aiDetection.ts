@@ -19,12 +19,18 @@ interface AiDetectionResult {
 
 function getFirebaseAuth() {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-  const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
-  const projectId =
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.GCLOUD_PROJECT ||
-    process.env.GOOGLE_CLOUD_PROJECT ||
-    firebaseConfig.projectId;
+  let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+  if (!projectId) {
+    try {
+      const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+      projectId = firebaseConfig.projectId;
+    } catch (err) {
+      throw new Error(`Could not read firebase-applet-config.json to get projectId: ${err}`);
+    }
+  }
+  if (!projectId) {
+    throw new Error("Firebase projectId is not set. Set FIREBASE_PROJECT_ID or add projectId to firebase-applet-config.json.");
+  }
   const app = getApps()[0] || initializeApp({ projectId });
   return getAuth(app);
 }
@@ -81,8 +87,23 @@ export async function analyzeTextWithAiOrNot(
 
   try {
     await getFirebaseAuth().verifyIdToken(tokenMatch[1]);
-  } catch {
-    return { status: 401, body: { error: "Your sign-in session is invalid or expired. Sign in again." } };
+  } catch (err: any) {
+    const msg = String(err?.message || err || '');
+    // Firebase Admin needs service account credentials to verify tokens outside GCP.
+    // Without GOOGLE_APPLICATION_CREDENTIALS set, it throws a credential error.
+    if (
+      msg.includes('credential') ||
+      msg.includes('Could not load the default credentials') ||
+      msg.includes('UNAUTHENTICATED') ||
+      msg.includes('projectId is not set')
+    ) {
+      console.error('Firebase Admin credential error — set GOOGLE_APPLICATION_CREDENTIALS or run on GCP:', msg);
+      return {
+        status: 503,
+        body: { error: 'AI detection is not available: the server is missing Firebase Admin credentials. Set GOOGLE_APPLICATION_CREDENTIALS to a service account key file.' },
+      };
+    }
+    return { status: 401, body: { error: 'Your sign-in session is invalid or expired. Sign in again.' } };
   }
 
   const apiKey = process.env.AIORNOT_API_KEY;

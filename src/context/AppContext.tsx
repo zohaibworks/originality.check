@@ -2410,7 +2410,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         setScanProgress({ step: 'Checking text with AI or Not...', percent: 60 });
         const idToken = await auth.currentUser.getIdToken();
-        const response = await fetch('/api/ai-detect', {
+        const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+        const response = await fetch(`${apiBase}/api/ai-detect`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${idToken}`,

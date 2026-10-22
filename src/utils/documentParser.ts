@@ -145,7 +145,11 @@ export async function extractDocumentDataFromFile(file: File): Promise<Extracted
       let convertedPdfBase64 = '';
       let pdfPageCount = 0;
       let conversionError = 'DOCX conversion failed. Please make sure LibreOffice is installed and try again.';
-      const converterBaseUrl = import.meta.env.VITE_DOCX_CONVERTER_URL?.replace(/\/$/, '');
+      const converterBaseUrl = (
+        import.meta.env.VITE_DOCX_CONVERTER_URL ||
+        import.meta.env.VITE_API_URL ||
+        ''
+      ).replace(/\/$/, '');
 
       // Convert DOC/DOCX to PDF before extracting text or continuing the scan.
       try {
