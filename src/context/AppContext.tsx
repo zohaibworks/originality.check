@@ -35,6 +35,7 @@ import {
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
+  getDoc,
 } from 'firebase/firestore';
 import { buildUserFromAuthProfile } from '../lib/userProfiles';
 import { deleteReportFile, getReportFile, pruneExpiredReportFiles, saveReportFile } from '../utils/reportFileStore';
@@ -2761,31 +2762,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Try to sync to Firestore even in fallback so admin sees the deduction
         try {
           const userRef = doc(db, 'users', firebaseUser.uid);
-          await runTransaction(db, async transaction => {
-            const userSnapshot = await transaction.get(userRef);
-            if (!userSnapshot.exists()) return;
-            const userData = userSnapshot.data();
-            const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : fallbackBal + cost;
-            const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : fallbackUsed - cost;
-            const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : fallbackScans - 1;
-            if (rawDocCredits < cost) return;
-            transaction.set(userRef, {
-              credits: Math.max(0, rawDocCredits - cost),
-              usedCredits: rawDocUsed + cost,
-              totalScans: rawDocScans + 1,
-            }, { merge: true });
-            transaction.set(doc(db, 'transactions', transactionId), cleanFirestoreData({
-              id: transactionId,
-              userId: firebaseUser.uid,
-              userName: currentUser.name || userData.name || 'User',
-              amount: -cost,
-              balanceAfter: Math.max(0, rawDocCredits - cost),
-              type: 'scan_deduction',
-              note: localScanTxn.note,
-              date: transactionDate,
-              timestamp: now,
-            }));
-          });
+          // Try transaction first
+          try {
+            await runTransaction(db, async transaction => {
+              const userSnapshot = await transaction.get(userRef);
+              if (!userSnapshot.exists()) return;
+              const userData = userSnapshot.data();
+              const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : fallbackBal + cost;
+              const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : fallbackUsed - cost;
+              const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : fallbackScans - 1;
+              if (rawDocCredits < cost) return;
+              transaction.set(userRef, {
+                credits: Math.max(0, rawDocCredits - cost),
+                usedCredits: rawDocUsed + cost,
+                totalScans: rawDocScans + 1,
+              }, { merge: true });
+              transaction.set(doc(db, 'transactions', transactionId), cleanFirestoreData({
+                id: transactionId,
+                userId: firebaseUser.uid,
+                userName: currentUser.name || userData.name || 'User',
+                amount: -cost,
+                balanceAfter: Math.max(0, rawDocCredits - cost),
+                type: 'scan_deduction',
+                note: localScanTxn.note,
+                date: transactionDate,
+                timestamp: now,
+              }));
+            });
+          } catch (txSyncErr) {
+            console.warn('Transaction sync failed, trying direct update:', txSyncErr);
+            // Direct update as fallback
+            try {
+              const snap = await getDoc(userRef);
+              if (snap.exists()) {
+                const ud = snap.data();
+                const rc = typeof ud.credits === 'number' ? ud.credits : fallbackBal + cost;
+                const ru = typeof ud.usedCredits === 'number' ? ud.usedCredits : fallbackUsed - cost;
+                const rs = typeof ud.totalScans === 'number' ? ud.totalScans : fallbackScans - 1;
+                if (rc >= cost) {
+                  await setDoc(userRef, {
+                    credits: rc - cost,
+                    usedCredits: ru + cost,
+                    totalScans: rs + 1,
+                  }, { merge: true });
+                }
+              }
+            } catch (directErr) {
+              console.warn('Direct update failed:', directErr);
+            }
+            // Always try to write transaction
+            try {
+              await setDoc(doc(db, 'transactions', transactionId), cleanFirestoreData({
+                id: transactionId,
+                userId: firebaseUser.uid,
+                userName: currentUser.name,
+                amount: -cost,
+                balanceAfter: fallbackBal,
+                type: 'scan_deduction',
+                note: localScanTxn.note,
+                date: transactionDate,
+                timestamp: now,
+              }));
+            } catch (txnDirectErr) {
+              console.warn('Direct transaction write failed:', txnDirectErr);
+            }
+          }
         } catch (syncErr) {
           console.warn('Could not sync scan deduction to Firestore in fallback:', syncErr);
         }
