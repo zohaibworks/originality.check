@@ -283,6 +283,23 @@ export const formatTurnitinSubmissionId = (id?: string): string => {
   return `30${digits.padStart(9, '0')}`;
 };
 
+export const normalizeTransactionData = (d: any, id: string): CreditTransaction => {
+  const isScan = d.type === 'scan_deduction' || (typeof d.note === 'string' && d.note.toLowerCase().includes('scanned document'));
+  const rawAmount = typeof d.amount === 'number' ? d.amount : 0;
+  const amount = isScan ? -1 : (rawAmount === -5 ? -1 : rawAmount);
+  return {
+    id,
+    userId: d.userId,
+    userName: d.userName || 'User',
+    amount,
+    balanceAfter: typeof d.balanceAfter === 'number' ? d.balanceAfter : 0,
+    type: isScan ? 'scan_deduction' : (d.type || 'admin_grant'),
+    note: d.note || '',
+    date: d.date || formatPakistanDateTime(Date.now()),
+    timestamp: typeof d.timestamp === 'number' ? d.timestamp : Date.now(),
+  };
+};
+
 const sanitizePersistedReports = (items: ScanReport[] = [], userId?: string): ScanReport[] => {
   const seen = new Set<string>();
   return pruneExpiredReports(
@@ -577,7 +594,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TXNS);
       return saved
-        ? (JSON.parse(saved) as CreditTransaction[])
+        ? (JSON.parse(saved) as any[])
+            .map(t => normalizeTransactionData(t, t.id || 'tx-legacy'))
             .sort((first, second) => second.timestamp - first.timestamp)
             .slice(0, ADMIN_ACTIVITY_PAGE_SIZE)
         : [
@@ -1152,17 +1170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((docSnap) => {
             const d = docSnap.data();
             if (d && d.userId) {
-              fsTxns.push({
-                id: docSnap.id,
-                userId: d.userId,
-                userName: d.userName || 'User',
-                amount: typeof d.amount === 'number' ? d.amount : 0,
-                balanceAfter: typeof d.balanceAfter === 'number' ? d.balanceAfter : 0,
-                type: d.type || 'admin_grant',
-                note: d.note || '',
-                date: d.date || formatPakistanDateTime(Date.now()),
-                timestamp: typeof d.timestamp === 'number' ? d.timestamp : Date.now(),
-              });
+              fsTxns.push(normalizeTransactionData(d, docSnap.id));
             }
           });
           fsTxns.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -1273,17 +1281,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .map((docSnap: QueryDocumentSnapshot<DocumentData>) => {
             const data = docSnap.data();
             if (!data.userId) return null;
-            return {
-              id: docSnap.id,
-              userId: data.userId,
-              userName: data.userName || 'User',
-              amount: typeof data.amount === 'number' ? data.amount : 0,
-              balanceAfter: typeof data.balanceAfter === 'number' ? data.balanceAfter : 0,
-              type: data.type || 'admin_grant',
-              note: data.note || '',
-              date: data.date || formatPakistanDateTime(Date.now()),
-              timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
-            } satisfies CreditTransaction;
+            return normalizeTransactionData(data, docSnap.id);
           })
           .filter((transaction: CreditTransaction | null): transaction is CreditTransaction => transaction !== null);
         setTransactions(previous => {
@@ -1435,17 +1433,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           txnsSnap.forEach((docSnap: any) => {
             const d = docSnap.data();
             if (d && d.userId) {
-              fsTxns.push({
-                id: docSnap.id,
-                userId: d.userId,
-                userName: d.userName || 'User',
-                amount: typeof d.amount === 'number' ? d.amount : 0,
-                balanceAfter: typeof d.balanceAfter === 'number' ? d.balanceAfter : 0,
-                type: d.type || 'admin_grant',
-                note: d.note || '',
-                date: d.date || formatPakistanDateTime(Date.now()),
-                timestamp: typeof d.timestamp === 'number' ? d.timestamp : Date.now(),
-              });
+              fsTxns.push(normalizeTransactionData(d, docSnap.id));
             }
           });
           fsTxns.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));

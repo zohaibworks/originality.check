@@ -2640,7 +2640,7 @@ export async function downloadReportPdf(
   onProgress?: (current: number, total: number) => void,
   ownerName?: string
 ): Promise<void> {
-  if (report.reportStyle === 'classic') {
+  if (report.reportStyle === 'classic' && mode !== 'ai') {
     await downloadClassicReportPdf(report, onProgress, ownerName);
     return;
   }

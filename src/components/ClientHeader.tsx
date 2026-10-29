@@ -169,11 +169,14 @@ export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix })
                     All caught up! No unread notifications
                   </div>
                 ) : (
-                  recentAlerts.map(tx => (
+                  recentAlerts.map(tx => {
+                    const isScanDeduction = tx.type === 'scan_deduction' || (Boolean(tx.note) && tx.note.toLowerCase().includes('scanned document'));
+                    const displayAmount = isScanDeduction ? -1 : (tx.amount === -5 ? -1 : tx.amount);
+                    return (
                     <div key={tx.id} className="py-2.5 flex items-start gap-2.5">
                       <div
                         className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                          tx.amount >= 0 ? 'bg-emerald-500' : 'bg-indigo-500'
+                          displayAmount >= 0 ? 'bg-emerald-500' : 'bg-indigo-500'
                         }`}
                       />
                       <div className="min-w-0 flex-1">
@@ -184,13 +187,13 @@ export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix })
                       </div>
                       <span
                         className={`text-xs font-bold ${
-                          tx.amount >= 0 ? 'text-emerald-600' : 'text-slate-600'
+                          displayAmount >= 0 ? 'text-emerald-600' : 'text-slate-600'
                         }`}
                       >
-                        {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
+                        {displayAmount > 0 ? `+${displayAmount}` : displayAmount}
                       </span>
                     </div>
-                  ))
+                  );})
                 )}
               </div>
 

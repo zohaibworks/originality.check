@@ -881,7 +881,10 @@ export const AdminPanel: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/60 text-slate-300">
-                  {transactions.map(tx => (
+                  {transactions.map(tx => {
+                    const isScanDeduction = tx.type === 'scan_deduction' || (Boolean(tx.note) && tx.note.toLowerCase().includes('scanned document'));
+                    const displayAmount = isScanDeduction ? -1 : (tx.amount === -5 ? -1 : tx.amount);
+                    return (
                     <tr key={tx.id} className="hover:bg-slate-750 transition">
                       <td className="py-3.5 px-5 text-slate-400 font-mono text-[11px]">
                         {formatActivityTimestamp(tx.timestamp, tx.date)}
@@ -904,9 +907,9 @@ export const AdminPanel: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold">
                         <span
-                          className={tx.amount > 0 ? 'text-emerald-400' : 'text-rose-400'}
+                          className={displayAmount > 0 ? 'text-emerald-400' : 'text-rose-400'}
                         >
-                          {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
+                          {displayAmount > 0 ? `+${displayAmount}` : displayAmount}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-400">
@@ -916,7 +919,7 @@ export const AdminPanel: React.FC = () => {
                         {tx.note}
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
