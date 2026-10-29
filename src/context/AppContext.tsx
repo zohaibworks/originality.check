@@ -2623,34 +2623,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // client cannot reach Firestore (permissions), fall back to localStorage so
       // the user still gets their similarity report and download icon.
       let firestoreOk = false;
-      const transactionId = `tx-${Date.now()}`;
-      const transactionDate = formatPakistanDateTime();
+      const transactionRef = doc(collection(db, 'transactions'));
+      const transactionId = transactionRef.id;
+      const transactionDate = formatPakistanDateTime(now);
 
       try {
         const balanceResult = await runTransaction(db, async transaction => {
           const userRef = doc(db, 'users', firebaseUser.uid);
           const userSnapshot = await transaction.get(userRef);
-          let userData: any = {};
-          let currentBalance = typeof currentUser.credits === 'number' ? currentUser.credits : 0;
-          let currentUsed = typeof currentUser.usedCredits === 'number' ? currentUser.usedCredits : 0;
-          let currentScans = typeof currentUser.totalScans === 'number' ? currentUser.totalScans : 0;
-
-          if (userSnapshot.exists()) {
-            userData = userSnapshot.data();
-            if (typeof userData.planExpiresAt === 'number' && Date.now() >= userData.planExpiresAt) {
-              throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
-            }
-            if (typeof userData.credits === 'number') currentBalance = userData.credits;
-            if (typeof userData.usedCredits === 'number') currentUsed = userData.usedCredits;
-            if (typeof userData.totalScans === 'number') currentScans = userData.totalScans;
+          if (!userSnapshot.exists()) {
+            throw new Error('User profile missing in Firestore.');
           }
 
-          if (currentBalance < cost) {
-            throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${currentBalance}.`);
+          const userData = userSnapshot.data();
+          if (typeof userData.planExpiresAt === 'number' && now >= userData.planExpiresAt) {
+            throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
           }
-          const balanceAfter = Math.max(0, currentBalance - cost);
-          const usedCredits = currentUsed + cost;
-          const totalScans = currentScans + 1;
+
+          const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : 0;
+          const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : 0;
+          const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : 0;
+
+          if (rawDocCredits < cost) {
+            throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${rawDocCredits}.`);
+          }
+          const balanceAfter = Math.max(0, rawDocCredits - cost);
+          const usedCredits = rawDocUsed + cost;
+          const totalScans = rawDocScans + 1;
 
           transaction.set(userRef, {
             credits: balanceAfter,
@@ -2667,11 +2666,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             type: 'scan_deduction',
             note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
             date: transactionDate,
-            timestamp: Date.now(),
+            timestamp: now,
           });
 
-          transaction.set(doc(db, 'transactions', transactionId), txnPayload);
-          return { balanceAfter, usedCredits, totalScans };
+          transaction.set(transactionRef, txnPayload);
+          return {
+            balanceAfter,
+            usedCredits,
+            totalScans,
+            userName: currentUser.name || userData.name || 'User',
+          };
         });
 
         try {
@@ -2703,13 +2707,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const scanTxn: CreditTransaction = {
           id: transactionId,
           userId: firebaseUser.uid,
-          userName: currentUser.name,
+          userName: balanceResult.userName,
           amount: -cost,
           balanceAfter: newBal,
           type: 'scan_deduction',
           note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
           date: transactionDate,
-          timestamp: Date.now(),
+          timestamp: now,
         };
         setTransactions(prev => [scanTxn, ...prev]);
         try {
