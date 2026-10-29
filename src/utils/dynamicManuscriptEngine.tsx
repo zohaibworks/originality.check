@@ -52,81 +52,176 @@ export interface ManuscriptPageData {
  * Generates realistic, domain-tailored matched sources for any uploaded document.
  * Strictly clamps total plagiarism similarity within 1% to 12% (never exceeding 12%).
  */
+// High-frequency authentic Turnitin university student paper sources (50% ratio: UK, USA, and Pakistan HEC)
+const UNIVERSITY_STUDENT_PAPER_SOURCES = [
+  // USA Universities & Colleges
+  { name: 'Submitted to Florida Southern College', url: 'https://flsouthern.edu', type: 'student_paper' as const },
+  { name: 'Submitted to American College of Education', url: 'https://ace.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Harvard University', url: 'https://harvard.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Stanford University', url: 'https://stanford.edu', type: 'student_paper' as const },
+  { name: 'Submitted to University of California, Berkeley', url: 'https://berkeley.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Massachusetts Institute of Technology', url: 'https://mit.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Columbia University', url: 'https://columbia.edu', type: 'student_paper' as const },
+  { name: 'Submitted to University of Texas at Austin', url: 'https://utexas.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Johns Hopkins University', url: 'https://jhu.edu', type: 'student_paper' as const },
+  { name: 'Submitted to New York University', url: 'https://nyu.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Purdue University', url: 'https://purdue.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Pennsylvania State University', url: 'https://psu.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Georgia Institute of Technology', url: 'https://gatech.edu', type: 'student_paper' as const },
+  { name: 'Submitted to University of Florida', url: 'https://ufl.edu', type: 'student_paper' as const },
+
+  // UK Universities
+  { name: 'Submitted to University of Oxford', url: 'https://ox.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Cambridge', url: 'https://cam.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to Imperial College London', url: 'https://imperial.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University College London', url: 'https://ucl.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Edinburgh', url: 'https://ed.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Manchester', url: 'https://manchester.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to King\'s College London', url: 'https://kcl.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to London School of Economics', url: 'https://lse.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Warwick', url: 'https://warwick.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Leeds', url: 'https://leeds.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Birmingham', url: 'https://bham.ac.uk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Glasgow', url: 'https://gla.ac.uk', type: 'student_paper' as const },
+
+  // Pakistan HEC Recognized Universities
+  { name: 'Submitted to Higher Education Commission Pakistan', url: 'https://hec.gov.pk', type: 'student_paper' as const },
+  { name: 'Submitted to National University of Sciences & Technology', url: 'https://nust.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Quaid-i-Azam University', url: 'https://qau.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Lahore University of Management Sciences', url: 'https://lums.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to COMSATS University Islamabad', url: 'https://comsats.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to University of the Punjab', url: 'https://pu.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Engineering and Technology, Lahore', url: 'https://uet.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Aga Khan University', url: 'https://aku.edu', type: 'student_paper' as const },
+  { name: 'Submitted to Institute of Business Administration, Karachi', url: 'https://iba.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Karachi', url: 'https://uok.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to FAST-NUCES', url: 'https://nu.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Ghulam Ishaq Khan Institute', url: 'https://giki.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Government College University, Lahore', url: 'https://gcu.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to Bahauddin Zakariya University', url: 'https://bzu.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Agriculture, Faisalabad', url: 'https://uaf.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to University of Peshawar', url: 'https://uop.edu.pk', type: 'student_paper' as const },
+  { name: 'Submitted to International Islamic University, Islamabad', url: 'https://iiu.edu.pk', type: 'student_paper' as const },
+];
+
+// Authentic Internet Sources (50% ratio with domain hostnames like .com, .in, .edu, .org, etc.)
+const DOMAIN_INTERNET_SOURCES = [
+  { name: 'cdn.varsitytutors.com', url: 'https://cdn.varsitytutors.com', type: 'internet' as const },
+  { name: 'sciencedirect.com', url: 'https://sciencedirect.com', type: 'internet' as const },
+  { name: 'researchgate.net', url: 'https://researchgate.net', type: 'internet' as const },
+  { name: 'academia.edu', url: 'https://academia.edu', type: 'internet' as const },
+  { name: 'coursehero.com', url: 'https://coursehero.com', type: 'internet' as const },
+  { name: 'studocu.com', url: 'https://studocu.com', type: 'internet' as const },
+  { name: 'scribd.com', url: 'https://scribd.com', type: 'internet' as const },
+  { name: 'slideshare.net', url: 'https://slideshare.net', type: 'internet' as const },
+  { name: 'springeropen.com', url: 'https://springeropen.com', type: 'internet' as const },
+  { name: 'tandfonline.com', url: 'https://tandfonline.com', type: 'internet' as const },
+  { name: 'shodhganga.inflibnet.ac.in', url: 'https://shodhganga.inflibnet.ac.in', type: 'internet' as const },
+  { name: 'core.ac.uk', url: 'https://core.ac.uk', type: 'internet' as const },
+  { name: 'mdpi.com', url: 'https://mdpi.com', type: 'internet' as const },
+  { name: 'wiley.com', url: 'https://onlinelibrary.wiley.com', type: 'internet' as const },
+  { name: 'nature.com', url: 'https://nature.com', type: 'internet' as const },
+  { name: 'frontiersin.org', url: 'https://frontiersin.org', type: 'internet' as const },
+  { name: 'hindawi.com', url: 'https://hindawi.com', type: 'internet' as const },
+  { name: 'biorxiv.org', url: 'https://biorxiv.org', type: 'internet' as const },
+  { name: 'medrxiv.org', url: 'https://medrxiv.org', type: 'internet' as const },
+  { name: 'arxiv.org', url: 'https://arxiv.org', type: 'internet' as const },
+  { name: 'ssrn.com', url: 'https://ssrn.com', type: 'internet' as const },
+  { name: 'geeksforgeeks.org', url: 'https://geeksforgeeks.org', type: 'internet' as const },
+  { name: 'tutorialspoint.com', url: 'https://tutorialspoint.com', type: 'internet' as const },
+  { name: 'investopedia.com', url: 'https://investopedia.com', type: 'internet' as const },
+  { name: 'britannica.com', url: 'https://britannica.com', type: 'internet' as const },
+  { name: 'khanacademy.org', url: 'https://khanacademy.org', type: 'internet' as const },
+  { name: 'chegg.com', url: 'https://chegg.com', type: 'internet' as const },
+  { name: 'quizlet.com', url: 'https://quizlet.com', type: 'internet' as const },
+  { name: 'nptel.ac.in', url: 'https://nptel.ac.in', type: 'internet' as const },
+  { name: 'ijsr.net', url: 'https://ijsr.net', type: 'internet' as const },
+  { name: 'iosrjournals.org', url: 'https://iosrjournals.org', type: 'internet' as const },
+  { name: 'ijitee.org', url: 'https://ijitee.org', type: 'internet' as const },
+];
+
+/**
+ * Deterministically shuffles an array based on an integer seed.
+ */
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const result = [...arr];
+  let s = Math.abs(seed) || 1;
+  for (let i = result.length - 1; i > 0; i--) {
+    s = (s * 9301 + 49297) % 233280;
+    const j = Math.floor((s / 233280) * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 export function generateSourcesForDocument(
   fileName: string,
   title: string,
   plagiarismScore: number
 ): MatchedSource[] {
-  const cleanTitle = (title || fileName || '').toLowerCase();
   const clampedPlag = clampSimilarityScore(plagiarismScore);
-
-  let domainSources: Array<{ name: string; url: string; type: 'internet' | 'publication' | 'student_paper' }> = [];
-
-  if (cleanTitle.includes('risk') || cleanTitle.includes('cyber') || cleanTitle.includes('security') || cleanTitle.includes('cyb')) {
-    domainSources = [
-      { name: 'Computer security - Wikipedia', url: 'https://en.wikipedia.org/wiki/Computer_security', type: 'internet' },
-      { name: 'WannaCry ransomware attack - Wikipedia', url: 'https://en.wikipedia.org/wiki/WannaCry_ransomware_attack', type: 'internet' },
-      { name: 'NIST SP 800-30 Rev 1: Guide for Conducting Risk Assessments', url: 'https://csrc.nist.gov/publications/detail/sp/800-30/rev-1/final', type: 'publication' },
-      { name: 'IEEE Transactions on Dependable and Secure Computing', url: 'https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=8858', type: 'publication' },
-      { name: 'Submitted to University of Technology, Sydney', url: 'https://uts.edu.au/student-repository/archive', type: 'student_paper' },
-      { name: 'SANS Institute InfoSec Reading Room', url: 'https://sans.org/white-papers/risk-management', type: 'internet' },
-    ];
-  } else if (cleanTitle.includes('clinic') || cleanTitle.includes('health') || cleanTitle.includes('medic') || cleanTitle.includes('diagnost')) {
-    domainSources = [
-      { name: 'The Lancet Digital Health: Machine Learning in Clinical Care', url: 'https://thelancet.com/journals/landig/article/PIIS2589-7500(23)00112-X', type: 'publication' },
-      { name: 'Nature Medicine - Clinical Predictive Diagnostics', url: 'https://nature.com/articles/s41591-023-02482-1', type: 'publication' },
-      { name: 'NCBI PMC National Library of Medicine', url: 'https://ncbi.nlm.nih.gov/pmc/articles/PMC8901234', type: 'internet' },
-      { name: 'Submitted to Johns Hopkins University', url: 'https://jhu.edu/scholarworks/student-papers', type: 'student_paper' },
-      { name: 'BioMed Central Medical Informatics and Decision Making', url: 'https://bmcmedinformdecismak.biomedcentral.com', type: 'publication' },
-    ];
-  } else if (cleanTitle.includes('learn') || cleanTitle.includes('ai') || cleanTitle.includes('neural') || cleanTitle.includes('comput')) {
-    domainSources = [
-      { name: 'arXiv.org - Computer Science: Artificial Intelligence', url: 'https://arxiv.org/abs/2304.09871', type: 'internet' },
-      { name: 'IEEE Transactions on Pattern Analysis and Machine Intelligence', url: 'https://ieeexplore.ieee.org/document/945281', type: 'publication' },
-      { name: 'ScienceDirect / Elsevier Cognitive Computation Archive', url: 'https://sciencedirect.com/science/article/pii/S18770509210087', type: 'publication' },
-      { name: 'Submitted to Stanford University', url: 'https://stanford.edu/academics/repository/cs229', type: 'student_paper' },
-      { name: 'Journal of Artificial Intelligence Research (JAIR)', url: 'https://jair.org/index.php/jair/article/view/11890', type: 'publication' },
-    ];
-  } else if (cleanTitle.includes('econ') || cleanTitle.includes('financ') || cleanTitle.includes('market') || cleanTitle.includes('trade')) {
-    domainSources = [
-      { name: 'Journal of Financial Economics (Elsevier)', url: 'https://sciencedirect.com/journal/journal-of-financial-economics', type: 'publication' },
-      { name: 'NBER Working Paper Series - Macroeconomics & Quantitative Finance', url: 'https://nber.org/papers/w29810', type: 'publication' },
-      { name: 'Federal Reserve Bank Economic Research Repository', url: 'https://federalreserve.gov/econres/feds/2023.htm', type: 'internet' },
-      { name: 'Submitted to London School of Economics', url: 'https://lse.ac.uk/library/repository', type: 'student_paper' },
-      { name: 'The American Economic Review', url: 'https://aeaweb.org/articles?id=10.1257/aer.20210982', type: 'publication' },
-    ];
-  } else {
-    domainSources = [
-      { name: 'ScienceDirect / Elsevier Academic Archive', url: 'https://sciencedirect.com/science/article/pii', type: 'publication' },
-      { name: 'Harvard University Scholar Repository', url: 'https://harvard.edu/dash/handle/291', type: 'student_paper' },
-      { name: 'Springer Nature Academic Publications', url: 'https://link.springer.com/chapter/10.1007/978-3-030', type: 'publication' },
-      { name: 'Wikipedia - Academic Research & Empirical Methodology', url: 'https://en.wikipedia.org/wiki/Empirical_research', type: 'internet' },
-      { name: 'Submitted to University of California, Berkeley', url: 'https://escholarship.org/uc/item/7pk8r91', type: 'student_paper' },
-      { name: 'JSTOR Digital Archival Library', url: 'https://jstor.org/stable/2578912', type: 'publication' },
-    ];
-  }
-
   if (clampedPlag <= 0) {
     return [];
   }
 
-  // Distribute the clampedPlag (1% to 12%) proportionally across the sources
-  const count = Math.min(domainSources.length, Math.max(2, Math.min(4, Math.ceil(clampedPlag / 3.5))));
-  const selected = domainSources.slice(0, count);
+  // Derive an active seed from the title / fileName and current timestamp
+  const inputStr = `${fileName}_${title}_${Date.now()}`;
+  let hash = 0;
+  for (let i = 0; i < inputStr.length; i++) {
+    hash = (hash << 5) - hash + inputStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const seed = Math.abs(hash) + Math.floor(Math.random() * 10000);
 
-  // Weights for decreasing distribution (e.g. 60%, 25%, 15%)
-  const rawWeights = [0.58, 0.28, 0.14, 0.08].slice(0, count);
-  const weightSum = rawWeights.reduce((a, b) => a + b, 0);
+  // Shuffle both university sources and internet domain sources
+  const shuffledUnis = seededShuffle(UNIVERSITY_STUDENT_PAPER_SOURCES, seed);
+  const shuffledInternet = seededShuffle(DOMAIN_INTERNET_SOURCES, seed + 101);
+
+  // Determine total number of primary sources (typically 2 to 6 based on plagiarism percentage)
+  const count = Math.min(10, Math.max(2, Math.min(6, Math.ceil(clampedPlag / 2.2))));
+
+  // Allocate 50% university student paper sources and 50% internet sources
+  const uniCount = Math.ceil(count / 2);
+  const netCount = count - uniCount;
+
+  // Interleave sources so they alternate or start appropriately (e.g. Uni, Internet, Uni, Internet...)
+  const interleavedSources: Array<{ name: string; url: string; type: 'internet' | 'publication' | 'student_paper' }> = [];
+  let uIdx = 0;
+  let nIdx = 0;
+
+  for (let i = 0; i < count; i++) {
+    if (i % 2 === 0) {
+      if (uIdx < uniCount && uIdx < shuffledUnis.length) {
+        interleavedSources.push(shuffledUnis[uIdx++]);
+      } else if (nIdx < shuffledInternet.length) {
+        interleavedSources.push(shuffledInternet[nIdx++]);
+      }
+    } else {
+      if (nIdx < netCount && nIdx < shuffledInternet.length) {
+        interleavedSources.push(shuffledInternet[nIdx++]);
+      } else if (uIdx < shuffledUnis.length) {
+        interleavedSources.push(shuffledUnis[uIdx++]);
+      }
+    }
+  }
+
+  // Distribute the similarity percentages across the sources
+  // Weights for decreasing distribution (e.g. 50%, 25%, 15%, 10%...)
+  const baseWeights = [0.45, 0.25, 0.15, 0.08, 0.05, 0.02];
+  const weights = baseWeights.slice(0, interleavedSources.length);
+  const weightSum = weights.reduce((a, b) => a + b, 0);
 
   let remaining = clampedPlag;
-  return selected.map((s, idx) => {
+  return interleavedSources.map((s, idx) => {
     let sim: number;
-    if (idx === count - 1) {
-      sim = Math.max(idx === 0 ? 1 : 0, remaining);
+    if (idx === interleavedSources.length - 1) {
+      sim = Math.max(1, remaining);
     } else {
-      const normalizedWeight = rawWeights[idx] / weightSum;
+      const normalizedWeight = weights[idx] / weightSum;
       sim = Math.max(1, Math.round(clampedPlag * normalizedWeight));
-      if (sim > remaining) sim = remaining;
+      if (sim > remaining - (interleavedSources.length - idx - 1)) {
+        sim = Math.max(1, remaining - (interleavedSources.length - idx - 1));
+      }
       remaining -= sim;
     }
 

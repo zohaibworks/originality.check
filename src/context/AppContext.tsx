@@ -1,6 +1,6 @@
-﻿import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { User, ScanReport, ActivationCode, PurchaseKey, CreditTransaction, ScanMode, HighlightedSnippet, MatchedSource } from '../types';
-import { cleanText, generateSmartSnippets, MAX_SIMILARITY_SCORE, filterTextForAiScan, isExcludedFromHighlighting, isMainHeadingText, isTableText, isTableOfContentsText, isFigureOrGraphText, isBibliographyOrReferenceText } from '../utils/documentParser';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { User, ScanReport, ActivationCode, PurchaseKey, CreditTransaction, ScanMode, ReportStyle, HighlightedSnippet, MatchedSource } from '../types';
+import { cleanText, generateSmartSnippets, MAX_SIMILARITY_SCORE, countWords, filterTextForAiScan, isExcludedFromHighlighting, isMainHeadingText, isTableText, isTableOfContentsText, isFigureOrGraphText, isBibliographyOrReferenceText } from '../utils/documentParser';
 import { generateSourcesForDocument } from '../utils/dynamicManuscriptEngine';
 import {
   auth,
@@ -139,6 +139,9 @@ interface AppContextType {
     mode: ScanMode;
     authorFirst?: string;
     authorLast?: string;
+    classicAuthor?: string;
+    ownerName?: string;
+    reportStyle?: ReportStyle;
     excludeBibliography?: boolean;
     excludeQuotes?: boolean;
     fileContent?: string;
@@ -263,6 +266,23 @@ const isLegacyReport = (report: Partial<ScanReport>): boolean => {
   );
 };
 
+export const generateTurnitinSubmissionId = (): string => {
+  const randomNine = Math.floor(100000000 + Math.random() * 900000000).toString();
+  return `30${randomNine}`;
+};
+
+export const formatTurnitinSubmissionId = (id?: string): string => {
+  if (!id) return generateTurnitinSubmissionId();
+  const digits = id.replace(/\D/g, '');
+  if (digits.startsWith('30') && digits.length === 11) {
+    return digits;
+  }
+  if (digits.length >= 9) {
+    return `30${digits.slice(-9)}`;
+  }
+  return `30${digits.padStart(9, '0')}`;
+};
+
 const sanitizePersistedReports = (items: ScanReport[] = [], userId?: string): ScanReport[] => {
   const seen = new Set<string>();
   return pruneExpiredReports(
@@ -289,10 +309,11 @@ const sanitizePersistedReports = (items: ScanReport[] = [], userId?: string): Sc
 
         return {
           ...r,
+          ownerName: r.ownerName,
           institution: getInstitutionName(r.institution),
           userId: r.userId || userId,
           expiresAt: getReportExpiry(r) ?? Date.now() + ONE_DAY_MS,
-          submissionId: r.submissionId || `trn:oid:${Math.floor(21940000000 + Math.random() * 99999999)}`,
+          submissionId: formatTurnitinSubmissionId(r.submissionId),
           contentSample: sample,
           snippets: (cleanedSnippets.length > 0 ? cleanedSnippets : []) as HighlightedSnippet[],
         };
@@ -2306,6 +2327,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mode: ScanMode;
     authorFirst?: string;
     authorLast?: string;
+    classicAuthor?: string;
+    ownerName?: string;
+    reportStyle?: ReportStyle;
     excludeBibliography?: boolean;
     excludeQuotes?: boolean;
     fileContent?: string;
@@ -2320,13 +2344,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     htmlPages?: string[];
     pageCount?: number;
   }): Promise<{ success: boolean; error?: string; report?: ScanReport }> => {
-    const creditCosts: Record<ScanMode, number> = {
-      ai: 2,
-      plagiarism: 3,
-      both: 5,
-    };
-
-    const cost = creditCosts[options.mode];
+    const cost = 1;
 
     if (typeof currentUser.planExpiresAt === 'number' && Date.now() >= currentUser.planExpiresAt) {
       return {
@@ -2371,9 +2389,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const excludeBibliographySetting = options.excludeBibliography !== false;
 
       const authorFullName =
-        (options.authorFirst || options.authorLast)
+        options.classicAuthor?.trim() ||
+        ((options.authorFirst || options.authorLast)
           ? `${options.authorFirst || ''} ${options.authorLast || ''}`.trim()
-          : currentUser.name;
+          : currentUser.name);
+
+      const profileOwnerName =
+        options.ownerName?.trim() ||
+        currentUser.name ||
+        'Kunal Kumar';
 
       const rawSampleText = (options.fileContent || '').replace(/\r/g, '');
       const sampleText = rawSampleText
@@ -2393,52 +2417,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       }
 
+      // Word limits by report type:
+      // - AI Detection report: 0–30,000 words
+      // - Plagiarism report (Classic / New View): 0–60,000 words
+      // - Classic + AI / New + AI ('both'): document up to 60k for plagiarism;
+      //   AI provider receives only the first 30k words.
+      const aiWordLimit = 30000;
+      const plagWordLimit = 60000;
+      const wordCount = countWords(sampleText);
+
+      if (options.mode === 'ai' && wordCount > aiWordLimit) {
+        return {
+          success: false,
+          error: `Please upload a file within the ${aiWordLimit.toLocaleString()} word limit for AI detection.`,
+        };
+      }
+      if ((options.mode === 'plagiarism' || options.mode === 'both') && wordCount > plagWordLimit) {
+        return {
+          success: false,
+          error: `Please upload a file within the ${plagWordLimit.toLocaleString()} word limit for similarity scan.`,
+        };
+      }
+
       let aiScore = 0;
       let aiAnnotations: Array<{ text: string; confidence: number }> = [];
       const aiEnabled = options.mode === 'ai' || options.mode === 'both';
       if (aiEnabled) {
-        // Filter out TOC, tables, figures/graphs, references, and headings before
-        // sending to the AI API — these sections should never count toward the AI score.
-        const aiScanText = filterTextForAiScan(sampleText);
+        try {
+          // Filter out TOC, tables, figures/graphs, references, and headings before
+          // sending to the AI API — these sections should never count toward the AI score.
+          let aiScanText = filterTextForAiScan(sampleText);
 
-        if (aiScanText.length < 250) {
-          throw new Error('Not enough body text (after excluding TOC, tables, figures, references, and headings) for AI detection. Please upload a document with more readable body content.');
-        }
-        if (aiScanText.length > 500_000) {
-          throw new Error("Text exceeds AI or Not's 500,000-character analysis limit.");
-        }
+          // AI provider is limited to 30,000 words; in 'both' mode the similarity
+          // portion still scans the full document, but AI only sees the first 30k words.
+          const aiWords = aiScanText.trim().split(/\s+/).filter(Boolean);
+          if (aiWords.length > aiWordLimit) {
+            aiScanText = aiWords.slice(0, aiWordLimit).join(' ');
+          }
 
-        setScanProgress({ step: 'Checking text with AI or Not...', percent: 60 });
-        const idToken = await auth.currentUser.getIdToken();
-        const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
-        const response = await fetch(`${apiBase}/api/ai-detect`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ text: aiScanText }),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(
-            typeof result.error === 'string'
-              ? result.error
-              : `AI detection endpoint returned HTTP ${response.status}. No score was generated.`
-          );
-        }
-        if (
-          typeof result.aiScore !== 'number' ||
-          !Number.isInteger(result.aiScore) ||
-          result.aiScore < 0 ||
-          result.aiScore > 100 ||
-          !Array.isArray(result.annotations)
-        ) {
-          throw new Error('AI detection provider returned an invalid response. No score was generated.');
-        }
+          if (aiScanText.length < 250) {
+            throw new Error('Not enough body text (after excluding TOC, tables, figures, references, and headings) for AI detection. Please upload a document with more readable body content.');
+          }
+          if (aiScanText.length > 500_000) {
+            throw new Error("Text exceeds AI or Not's 500,000-character analysis limit.");
+          }
 
-        aiScore = result.aiScore;
-        aiAnnotations = result.annotations;
+          setScanProgress({ step: 'Checking text with AI or Not...', percent: 60 });
+          const idToken = await auth.currentUser.getIdToken();
+          const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+          const response = await fetch(`${apiBase}/api/ai-detect`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text: aiScanText }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(
+              typeof result.error === 'string'
+                ? result.error
+                : `AI detection endpoint returned HTTP ${response.status}. No score was generated.`
+            );
+          }
+          if (
+            typeof result.aiScore !== 'number' ||
+            !Number.isInteger(result.aiScore) ||
+            result.aiScore < 0 ||
+            result.aiScore > 100 ||
+            !Array.isArray(result.annotations)
+          ) {
+            throw new Error('AI detection provider returned an invalid response. No score was generated.');
+          }
+
+          aiScore = result.aiScore;
+          aiAnnotations = result.annotations;
+        } catch (err) {
+          // AI detection is non-fatal: keep scanning and save the similarity report,
+          // but report aiScore as 0 so no AI report/download is generated.
+          console.error('AI detection failed (non-fatal), continuing with similarity-only scan:', err);
+          setNotification({
+            message: 'AI detection unavailable — similarity report still generated.',
+            type: 'error',
+          });
+        }
       }
 
       const reportId = `rep-${Date.now()}`;
@@ -2510,7 +2573,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fileName: options.fileName,
         fileSize: storedFileSize ? `${Math.max(0.01, storedFileSize / (1024 * 1024)).toFixed(2)} MB` : '1.8 MB',
         author: authorFullName || 'Author',
+        classicAuthor: options.classicAuthor?.trim() || (options.reportStyle === 'classic' ? authorFullName : undefined),
+        ownerName: profileOwnerName,
         type: modeNameMap[options.mode] || 'Both',
+        reportStyle: options.reportStyle,
         status: 'Completed',
         plagiarismScore: plagScore,
         aiScore: aiScore,
@@ -2520,7 +2586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timestamp: now,
         excludeBibliography: options.excludeBibliography !== false,
         excludeQuotes: options.excludeQuotes !== false,
-        submissionId: `trn:oid:${Math.floor(21940000000 + Math.random() * 99999999)}`,
+        submissionId: generateTurnitinSubmissionId(),
         sources: sourcesList,
         contentSample: sampleText,
         snippets: generatedSnippets,
@@ -2564,73 +2630,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fileMetadataId: _fileMetadataId,
         ...persistedReport
       } = newReport;
-      await setDoc(doc(db, 'reports', newReport.id), {
-        ...persistedReport,
-        userId: firebaseUser.uid,
-        expiresAt: newReport.expiresAt,
-      });
 
-      const transactionId = `tx-${Date.now()}`;
-      const transactionDate = formatPakistanDateTime();
-      const balanceResult = await runTransaction(db, async transaction => {
-        const userRef = doc(db, 'users', firebaseUser.uid);
-        const userSnapshot = await transaction.get(userRef);
-        if (!userSnapshot.exists()) {
-          throw new Error('Your Firebase profile is missing. Please sign out and sign in again.');
-        }
-        const userData = userSnapshot.data();
-        if (typeof userData.planExpiresAt === 'number' && Date.now() >= userData.planExpiresAt) {
-          throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
-        }
-        const availableCredits = typeof userData.credits === 'number' ? userData.credits : 0;
-        if (availableCredits < cost) {
-          throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${availableCredits}.`);
-        }
-        const balanceAfter = availableCredits - cost;
-        const usedCredits = (typeof userData.usedCredits === 'number' ? userData.usedCredits : 0) + cost;
-        const totalScans = (typeof userData.totalScans === 'number' ? userData.totalScans : 0) + 1;
-        transaction.set(userRef, { credits: balanceAfter, usedCredits, totalScans }, { merge: true });
-        transaction.set(doc(db, 'transactions', transactionId), {
+      // Firestore writes are non-fatal: if the server lacks credentials or the
+      // client cannot reach Firestore (permissions), fall back to localStorage so
+      // the user still gets their similarity report and download icon.
+      let firestoreOk = false;
+      try {
+        await setDoc(doc(db, 'reports', newReport.id), {
+          ...persistedReport,
+          userId: firebaseUser.uid,
+          expiresAt: newReport.expiresAt,
+        });
+
+        const transactionId = `tx-${Date.now()}`;
+        const transactionDate = formatPakistanDateTime();
+        const balanceResult = await runTransaction(db, async transaction => {
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const userSnapshot = await transaction.get(userRef);
+          if (!userSnapshot.exists()) {
+            throw new Error('Your Firebase profile is missing. Please sign out and sign in again.');
+          }
+          const userData = userSnapshot.data();
+          if (typeof userData.planExpiresAt === 'number' && Date.now() >= userData.planExpiresAt) {
+            throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
+          }
+          const availableCredits = typeof userData.credits === 'number' ? userData.credits : 0;
+          if (availableCredits < cost) {
+            throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${availableCredits}.`);
+          }
+          const balanceAfter = availableCredits - cost;
+          const usedCredits = (typeof userData.usedCredits === 'number' ? userData.usedCredits : 0) + cost;
+          const totalScans = (typeof userData.totalScans === 'number' ? userData.totalScans : 0) + 1;
+          transaction.set(userRef, { credits: balanceAfter, usedCredits, totalScans }, { merge: true });
+          transaction.set(doc(db, 'transactions', transactionId), {
+            id: transactionId,
+            userId: firebaseUser.uid,
+            userName: currentUser.name,
+            amount: -cost,
+            balanceAfter,
+            type: 'scan_deduction',
+            note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode]})`,
+            date: transactionDate,
+            timestamp: Date.now(),
+          });
+          return { balanceAfter, usedCredits, totalScans };
+        });
+
+        const newBal = balanceResult.balanceAfter;
+        setCurrentUser(prev => ({
+          ...prev,
+          credits: balanceResult.balanceAfter,
+          usedCredits: balanceResult.usedCredits,
+          totalScans: balanceResult.totalScans,
+        }));
+        setUsers(prev => prev.map(user => user.id === firebaseUser.uid ? {
+          ...user,
+          credits: balanceResult.balanceAfter,
+          usedCredits: balanceResult.usedCredits,
+          totalScans: balanceResult.totalScans,
+        } : user));
+        setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
+
+        const scanTxn: CreditTransaction = {
           id: transactionId,
           userId: firebaseUser.uid,
           userName: currentUser.name,
           amount: -cost,
-          balanceAfter,
+          balanceAfter: newBal,
           type: 'scan_deduction',
           note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode]})`,
           date: transactionDate,
           timestamp: Date.now(),
+        };
+        setTransactions(prev => [scanTxn, ...prev]);
+
+        firestoreOk = true;
+      } catch (firestoreErr) {
+        console.error('Firestore write failed (non-fatal), saving to localStorage only:', firestoreErr);
+        const storageKey = getReportsStorageKey(currentUser.id);
+        const saved = localStorage.getItem(storageKey);
+        let items: ScanReport[] = [];
+        if (saved) {
+          try { items = JSON.parse(saved); } catch {}
+        }
+        items = pruneExpiredReports([newReport, ...items.filter(r => r.id !== newReport.id)], currentUser.id);
+        try { localStorage.setItem(storageKey, JSON.stringify(items)); } catch {}
+        setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
+
+        setNotification({
+          message: 'Scan finished! Report saved locally (cloud sync unavailable).',
+          type: 'info',
         });
-        return { balanceAfter, usedCredits, totalScans };
-      });
-
-      const newBal = balanceResult.balanceAfter;
-      setCurrentUser(prev => ({
-        ...prev,
-        credits: balanceResult.balanceAfter,
-        usedCredits: balanceResult.usedCredits,
-        totalScans: balanceResult.totalScans,
-      }));
-      setUsers(prev => prev.map(user => user.id === firebaseUser.uid ? {
-        ...user,
-        credits: balanceResult.balanceAfter,
-        usedCredits: balanceResult.usedCredits,
-        totalScans: balanceResult.totalScans,
-      } : user));
-      setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
-
-      const scanTxn: CreditTransaction = {
-        id: transactionId,
-        userId: firebaseUser.uid,
-        userName: currentUser.name,
-        amount: -cost,
-        balanceAfter: newBal,
-        type: 'scan_deduction',
-        note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode]})`,
-        date: transactionDate,
-        timestamp: Date.now(),
-      };
-      setTransactions(prev => [scanTxn, ...prev]);
+      }
 
       setScanProgress({ step: 'Finalizing report and rendering document...', percent: 100 });
       setTimeout(() => {
@@ -2638,10 +2729,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setScanProgress(null);
       }, 300);
 
-      setNotification({
-        message: `Scan finished! Report generated successfully (-${cost} credits).`,
-        type: 'success',
-      });
+      if (firestoreOk) {
+        setNotification({
+          message: `Scan finished! Report generated successfully (-${cost} credits).`,
+          type: 'success',
+        });
+      }
 
       return { success: true, report: newReport };
     } catch (error) {

@@ -18,7 +18,7 @@ export interface ExtractedDocumentData {
   wordCount?: number;
 }
 
-const MAX_DOCUMENT_WORDS = 30000;
+const MAX_DOCUMENT_WORDS = 60000;
 
 export const MAX_SIMILARITY_SCORE = 12;
 
@@ -214,9 +214,9 @@ export async function extractDocumentDataFromFile(file: File): Promise<Extracted
         const clean = cleanText(extractedText);
         const words = clean.trim().split(/\s+/).filter(Boolean).length;
 
-        // Word limit check (30,000 words maximum)
-        if (words > 30000) {
-          throw new Error(`File exceeds the maximum limit of 30,000 words (detected ${words.toLocaleString()} words). Please upload a document with 30,000 words or fewer.`);
+        // Word limit check (60,000 words maximum)
+        if (words > 60000) {
+          throw new Error(`File exceeds the maximum limit of 60,000 words (detected ${words.toLocaleString()} words). Please upload a document with 60,000 words or fewer.`);
         }
 
         return {
@@ -279,9 +279,9 @@ export async function extractDocumentDataFromFile(file: File): Promise<Extracted
       // Split HTML into structured pages (preserving headings, tables, and images intact)
       const words = extractedText.trim().split(/\s+/).filter(Boolean).length;
 
-      // Word limit check (30,000 words maximum)
-      if (words > 30000) {
-        throw new Error(`File exceeds the maximum limit of 30,000 words (detected ${words.toLocaleString()} words). Please upload a document with 30,000 words or fewer.`);
+      // Word limit check (60,000 words maximum)
+      if (words > 60000) {
+        throw new Error(`File exceeds the maximum limit of 60,000 words (detected ${words.toLocaleString()} words). Please upload a document with 60,000 words or fewer.`);
       }
 
       const estimatedPages = Math.max(1, Math.ceil(words / 320));
@@ -342,9 +342,9 @@ export async function extractDocumentDataFromFile(file: File): Promise<Extracted
 
       const words = clean.trim().split(/\s+/).filter(Boolean).length;
 
-      // Word limit check (30,000 words maximum)
-      if (words > 30000) {
-        throw new Error(`File exceeds the maximum limit of 30,000 words (detected ${words.toLocaleString()} words). Please upload a document with 30,000 words or fewer.`);
+      // Word limit check (60,000 words maximum)
+      if (words > 60000) {
+        throw new Error(`File exceeds the maximum limit of 60,000 words (detected ${words.toLocaleString()} words). Please upload a document with 60,000 words or fewer.`);
       }
 
       return {
@@ -364,9 +364,9 @@ export async function extractDocumentDataFromFile(file: File): Promise<Extracted
       const cleaned = cleanText(text);
       const words = cleaned.trim().split(/\s+/).filter(Boolean).length;
 
-      // Word limit check (30,000 words maximum)
-      if (words > 30000) {
-        throw new Error(`File exceeds the maximum limit of 30,000 words (detected ${words.toLocaleString()} words). Please upload a document with 30,000 words or fewer.`);
+      // Word limit check (60,000 words maximum)
+      if (words > 60000) {
+        throw new Error(`File exceeds the maximum limit of 60,000 words (detected ${words.toLocaleString()} words). Please upload a document with 60,000 words or fewer.`);
       }
 
       const pages = Math.max(1, Math.ceil(words / 320));
@@ -425,16 +425,19 @@ export function filterTextForAiScan(text: string): string {
       inTocSection = true;
     } else if (
       inTocSection &&
-      /^[0-9]+\.\s+[A-Za-z]/.test(trimmed) &&
-      !trimmed.includes('....') &&
-      !/\d+$/.test(trimmed)
+      (
+        (/^[0-9]+\.\s+[A-Za-z]/.test(trimmed) &&
+          !trimmed.includes('....') &&
+          !/\d+$/.test(trimmed)) ||
+        (trimmed.length >= 250 && /[.!?]/.test(trimmed) && !isTableOfContentsEntry(trimmed))
+      )
     ) {
       inTocSection = false; // TOC ended, body started
     }
 
     if (isTableHeadingOrCaption(trimmed) || isTableText(trimmed)) {
       inTableBlock = true;
-    } else if (inTableBlock && isMainHeadingText(trimmed)) {
+    } else if (inTableBlock) {
       inTableBlock = false;
     }
 
@@ -561,6 +564,7 @@ export function isTableOfContentsHeading(text: string): boolean {
     lower === 'table of contents' ||
     lower === 'table of contents:' ||
     lower.startsWith('table of contents\n') ||
+    /^table of contents?\b/i.test(lower) ||
     lower === 'contents' ||
     lower === 'contents:' ||
     lower.startsWith('contents\n') ||
@@ -618,6 +622,8 @@ export function isTableOfContentsText(text: string): boolean {
 export function isTableHeadingOrCaption(text: string): boolean {
   if (!text) return false;
   const trimmed = text.trim();
+
+  if (isTableOfContentsHeading(trimmed)) return false;
 
   return (
     /^(Table|Cuadro|Tabla|Tab\.)\s+[0-9A-Za-z\.\-_]+[:\.\s\-]/i.test(trimmed) ||
@@ -765,7 +771,7 @@ export function isGlossaryOrTermTableText(text: string): boolean {
   if (lower === 'glossary' || lower.startsWith('glossary ')) return true;
 
   // "AI: Artificial intelligence..." or "AI — Artificial intelligence..."
-  if (/^[A-Z][A-Za-z0-9 /&\-]{0,40}\s*[:–—-]\s+[A-Z]/.test(trimmed)) return true;
+  if (trimmed.length <= 160 && /^[A-Z][A-Za-z0-9 /&\-]{0,40}\s*[:–—-]\s+[A-Z]/.test(trimmed)) return true;
   // "Algorithm; A procedure for..." (term + semicolon definition)
   if (/^[A-Z][A-Za-z0-9 /&\-]{1,40};\s+\S+/.test(trimmed)) return true;
 
@@ -903,13 +909,6 @@ export function isCitationLine(text: string): boolean {
   if (/https?:\/\/doi\.org\//i.test(trimmed) || /doi:\s*10\.\d{4,9}\//i.test(trimmed)) return true;
   if (/ISBN(?:\s*-\s*1[03])?:\s*[\d\-]+/i.test(trimmed)) return true;
   if (/\b(vol\.|volume|no\.|issue|pp\.|pages)\s+\d+/i.test(trimmed) && /\b\d{4}\b/.test(trimmed)) return true;
-  if (
-    /\b(Journal of|Proceedings of|IEEE Transactions|ACM|Springer|Elsevier|Nature|Science|Wiley|Cambridge University Press|Oxford University Press)\b/i.test(
-      trimmed
-    )
-  ) {
-    return true;
-  }
   if (/^(Available at|Retrieved from|Accessed on):?\s*https?:\/\//i.test(trimmed)) return true;
   if (/^https?:\/\/[a-z0-9\.\-]+\.[a-z]{2,}/i.test(trimmed)) return true;
 

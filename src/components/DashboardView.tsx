@@ -34,6 +34,8 @@ export const DashboardView: React.FC = () => {
   const [selectedMode, setSelectedMode] = useState<ScanMode>('both');
   const [excludeBibliography, setExcludeBibliography] = useState(true);
   const [excludeQuotes, setExcludeQuotes] = useState(true);
+  const [viewMode, setViewMode] = useState<'classic' | 'new' | null>(null);
+  const [authorName, setAuthorName] = useState('');
 
   // File Upload State
   const [uploadedFile, setUploadedFile] = useState<{
@@ -42,9 +44,6 @@ export const DashboardView: React.FC = () => {
     docData?: ExtractedDocumentData;
   } | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [pasteMode, setPasteMode] = useState(false);
-  const [pastedText, setPastedText] = useState('');
-  const [inputTitle, setInputTitle] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isPreparingFile, setIsPreparingFile] = useState(false);
   const [preparingFileName, setPreparingFileName] = useState('');
@@ -59,7 +58,7 @@ export const DashboardView: React.FC = () => {
     const downloadId = `${report.id}-${mode}`;
     setDownloadingReportId(downloadId);
     try {
-      await downloadReportPdf(report, mode);
+      await downloadReportPdf(report, mode, undefined, currentUser.name);
       setNotification({
         message: `${mode === 'ai' ? 'AI' : 'Similarity'} report PDF downloaded successfully.`,
         type: 'success',
@@ -75,13 +74,7 @@ export const DashboardView: React.FC = () => {
     }
   };
 
-  const modeCosts: Record<ScanMode, number> = {
-    ai: 2,
-    plagiarism: 3,
-    both: 5,
-  };
-
-  const currentCost = modeCosts[selectedMode];
+  const currentCost = 1;
   const isPlanExpired = typeof currentUser.planExpiresAt === 'number' && Date.now() >= currentUser.planExpiresAt;
   const hasSufficientCredits = !isPlanExpired && currentUser.credits >= currentCost;
 
@@ -139,24 +132,80 @@ export const DashboardView: React.FC = () => {
 
   // Trigger analysis
   const handleAnalyze = async () => {
-    let fileName = uploadedFile ? uploadedFile.name : (inputTitle.trim() || 'Untitled_Document.docx');
-    let content = uploadedFile?.docData?.text || pastedText;
+    const fileName = uploadedFile ? uploadedFile.name : 'Untitled_Document.docx';
+    const content = uploadedFile?.docData?.text || '';
 
-    if (!uploadedFile?.docData?.text && !pastedText) {
+    if (!uploadedFile?.docData?.text) {
       setUploadError('Please upload a readable document before starting the analysis.');
       return;
     }
 
     if (isPreparingFile) return;
 
-    // Clear the upload card immediately so the submitted filename does not remain visible while scanning.
+    if (viewMode === 'classic' && !authorName.trim()) {
+      setUploadError('Enter the author name before starting the Classic report analysis.');
+      return;
+    }
+
+    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+    const PLAG_WORD_LIMIT = 60_000;
+    const AI_WORD_LIMIT = 30_000;
+
+    // Block if document exceeds plagiarism limit
+    if (wordCount > PLAG_WORD_LIMIT) {
+      setUploadError(
+        `This document has approximately ${wordCount.toLocaleString()} words, which exceeds the ${PLAG_WORD_LIMIT.toLocaleString()}-word limit for plagiarism analysis. Please upload a shorter document.`
+      );
+      return;
+    }
+
+    // Derive effective scan mode:
+    // - New View or Classic View selected → 'plagiarism'
+    // - AI Detection only → 'ai'
+    // - A View + AI Detection together → 'both' (similarity + AI)
+    // - Nothing selected → fall back to selectedMode state
+    const wantsBoth = (viewMode === 'new' || viewMode === 'classic') && selectedMode === 'ai';
+
+    let effectiveMode: ScanMode =
+      viewMode === 'new' || viewMode === 'classic'
+        ? wantsBoth
+          ? 'both'
+          : 'plagiarism'
+        : selectedMode;
+
+    // If doc exceeds AI word limit but AI was requested → downgrade to plagiarism only + notify
+    let aiSkippedDueToLength = false;
+    if ((effectiveMode === 'both' || effectiveMode === 'ai') && wordCount > AI_WORD_LIMIT) {
+      if (effectiveMode === 'both') {
+        effectiveMode = 'plagiarism';
+      } else {
+        // Pure AI scan requested but doc too long — block
+        setUploadError(
+          `AI detection requires documents under ${AI_WORD_LIMIT.toLocaleString()} words. This document has approximately ${wordCount.toLocaleString()} words. Please upload a shorter document or switch to Plagiarism Check only.`
+        );
+        return;
+      }
+      aiSkippedDueToLength = true;
+    }
+
     setUploadedFile(null);
-    setPastedText('');
     setUploadError(null);
+
+    // Show AI-skipped notification before scan starts
+    if (aiSkippedDueToLength) {
+      setNotification({
+        message: `AI detection skipped — this document exceeds the ${AI_WORD_LIMIT.toLocaleString()}-word AI analysis limit (~${wordCount.toLocaleString()} words). Running plagiarism check only.`,
+        type: 'info',
+      });
+    }
 
     await runScan({
       fileName,
-      mode: selectedMode,
+      mode: effectiveMode,
+      authorFirst: viewMode === 'classic' && authorName.trim() ? authorName.trim() : currentUser.name,
+      classicAuthor: viewMode === 'classic' ? authorName.trim() : undefined,
+      ownerName: currentUser.name,
+      reportStyle: viewMode ?? undefined,
       excludeBibliography,
       excludeQuotes,
       fileContent: content,
@@ -169,12 +218,16 @@ export const DashboardView: React.FC = () => {
       htmlPages: uploadedFile?.docData?.htmlPages,
       pageCount: uploadedFile?.docData?.pageCount,
     });
-
   };
 
   return (
     <div className="space-y-6 pb-12" id="dashboard-view">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" id="client-credit-summary">
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${
+          viewMode === 'new' ? 'mb-2' : 'mb-6'
+        }`}
+        id="client-credit-summary"
+      >
         {creditSummary.map(item => (
           <div key={item.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{item.label} Credits</p>
@@ -183,143 +236,109 @@ export const DashboardView: React.FC = () => {
         ))}
       </div>
 
-      {/* 3 Top Mode Cards matching screenshot */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4" id="mode-selector-grid">
-        {/* Card 1: AI Detection */}
-        <div
-          id="mode-card-ai"
-          onClick={() => setSelectedMode('ai')}
-          className={`relative rounded-2xl p-5 cursor-pointer transition-all border text-center flex flex-col items-center justify-center gap-2 ${
-            selectedMode === 'ai'
-              ? 'border-indigo-600 bg-indigo-50/30 ring-2 ring-indigo-500/20 shadow-sm'
-              : 'border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-          }`}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-2xl mb-1">
-            🤖
-          </div>
-          <h3 className="font-bold text-sm text-slate-800">AI Detection</h3>
-          <span className="text-xs text-slate-500 font-medium">Uses 2 Credits</span>
-        </div>
-
-        {/* Card 2: Plagiarism Check */}
-        <div
-          id="mode-card-plagiarism"
-          onClick={() => setSelectedMode('plagiarism')}
-          className={`relative rounded-2xl p-5 cursor-pointer transition-all border text-center flex flex-col items-center justify-center gap-2 ${
-            selectedMode === 'plagiarism'
-              ? 'border-indigo-600 bg-indigo-50/30 ring-2 ring-indigo-500/20 shadow-sm'
-              : 'border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-          }`}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-2xl mb-1">
-            🔍
-          </div>
-          <h3 className="font-bold text-sm text-slate-800">Plagiarism Check</h3>
-          <span className="text-xs text-slate-500 font-medium">Uses 3 Credits</span>
-        </div>
-
-        {/* Card 3: Both */}
-        <div
-          id="mode-card-both"
-          onClick={() => setSelectedMode('both')}
-          className={`relative rounded-2xl p-5 cursor-pointer transition-all border text-center flex flex-col items-center justify-center gap-2 ${
-            selectedMode === 'both'
-              ? 'border-indigo-600 bg-indigo-50/30 ring-2 ring-indigo-500/20 shadow-sm'
-              : 'border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-          }`}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl mb-1">
-            🛡️
-          </div>
-          <h3 className="font-bold text-sm text-slate-800">Both</h3>
-          <span className="text-xs text-slate-500 font-medium">Uses 5 Credits</span>
-        </div>
-      </div>
-
-      {/* Main Upload / Configuration Card */}
-      <div className="overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6" id="upload-panel-card">
+      <div className="flex flex-col gap-6">
+        {/* Main Upload / Configuration Card */}
+        <div className="overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6" id="upload-panel-card">
         {/* Optional Checkboxes (Visible for Plagiarism or Both) */}
-        {selectedMode !== 'ai' && (
-          <div className="flex flex-wrap items-center gap-6 pt-1 text-xs text-slate-700">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={excludeBibliography}
-                onChange={e => setExcludeBibliography(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
-                id="check-exclude-bib"
-              />
-              <span className="font-medium">Exclude Bibliography</span>
-            </label>
 
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={excludeQuotes}
-                onChange={e => setExcludeQuotes(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
-                id="check-exclude-quotes"
-              />
-              <span className="font-medium">Exclude Quotes</span>
+        {/* Toolbar Row */}
+        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-slate-100">
+          {/* Classic / New view — select one or none */}
+          <button
+            onClick={() => setViewMode(prev => prev === 'classic' ? null : 'classic')}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+              viewMode === 'classic'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            Classic
+          </button>
+          <button
+            onClick={() => setViewMode(prev => prev === 'new' ? null : 'new')}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+              viewMode === 'new'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            New View
+          </button>
+
+          {/* AI Detection toggle — left side, after view buttons */}
+          <div className="w-px h-5 bg-slate-200" />
+          <button
+            onClick={() => setSelectedMode(prev => prev === 'ai' ? 'plagiarism' : 'ai')}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+              selectedMode === 'ai'
+                ? 'bg-rose-50 border-rose-300 text-rose-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            AI Detection
+          </button>
+
+          {/* Exclude options — only when a view is selected */}
+          {viewMode !== null && (
+            <>
+              <div className="w-px h-5 bg-slate-200" />
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-slate-600 font-medium bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:border-slate-300 transition">
+                <input
+                  type="checkbox"
+                  checked={excludeBibliography}
+                  onChange={e => setExcludeBibliography(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  id="check-exclude-bib"
+                />
+                Excl. Bibliography
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-slate-600 font-medium bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:border-slate-300 transition">
+                <input
+                  type="checkbox"
+                  checked={excludeQuotes}
+                  onChange={e => setExcludeQuotes(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  id="check-exclude-quotes"
+                />
+                Excl. Quotes
+              </label>
+            </>
+          )}
+        </div>
+
+
+        {viewMode === 'classic' && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <label htmlFor="classic-author-name" className="text-xs font-medium text-slate-500 shrink-0">
+              Author:
             </label>
+            <input
+              id="classic-author-name"
+              type="text"
+              value={authorName}
+              onChange={event => setAuthorName(event.target.value)}
+              onClick={event => event.stopPropagation()}
+              placeholder=""
+              className="min-w-0 flex-1 border-0 bg-transparent px-1 py-0.5 text-xs font-semibold text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
+            />
           </div>
         )}
 
-        {/* Mode switcher tabs (Drop file vs Paste text) */}
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPasteMode(false)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
-                !pasteMode ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Upload Document
-            </button>
-            <button
-              onClick={() => setPasteMode(true)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
-                pasteMode ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Paste Text
-            </button>
-          </div>
-
-          {/* Credits requirement badge */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-slate-500">Cost:</span>
-            <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
-              {currentCost} Credits
-            </span>
-            <span className="text-slate-400">|</span>
-            <span className="text-slate-500">Balance:</span>
-            <span
-              className={`font-bold ${
-                hasSufficientCredits ? 'text-emerald-600' : 'text-rose-600'
-              }`}
-            >
-              {currentUser.credits} Credits
-            </span>
-          </div>
-        </div>
-
-        {/* Dropzone Container */}
-        {!pasteMode ? (
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`min-h-[220px] overflow-hidden rounded-[2rem] border-2 border-dashed p-5 text-center cursor-pointer transition flex flex-col items-center justify-center sm:p-10 ${
-              dragActive
-                ? 'border-indigo-500 bg-indigo-50/40'
-                : 'border-slate-200/90 bg-slate-50/30 hover:border-indigo-400 hover:bg-slate-50'
-            }`}
-            id="file-dropzone"
-          >
+        {/* Dropzone */}
+        <div
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`mt-3 min-h-[220px] w-full rounded-2xl border-2 border-dashed p-5 text-center cursor-pointer transition flex flex-col items-center justify-center sm:p-10 ${
+            dragActive
+              ? 'border-indigo-500 bg-indigo-50/40'
+              : 'border-slate-200 bg-slate-50/40 hover:border-indigo-400 hover:bg-slate-50'
+          }`}
+          id="file-dropzone"
+        >
             <input
               ref={fileInputRef}
               type="file"
@@ -350,63 +369,47 @@ export const DashboardView: React.FC = () => {
               </div>
             ) : uploadedFile ? (
               <div className="flex flex-col items-center gap-2">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl">
-                  📄
-                </div>
-                <div className="font-bold text-sm text-slate-900">
-                  {uploadedFile.name}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {uploadedFile.size} • Click or drag to replace
-                </div>
+                <FileText className="w-10 h-10 text-indigo-400" />
+                <div className="font-bold text-sm text-slate-900">{uploadedFile.name}</div>
+                <div className="text-xs text-slate-500">{uploadedFile.size} · Click or drag to replace</div>
+                {(() => {
+                  const wc = (uploadedFile.docData?.text || '').trim().split(/\s+/).filter(Boolean).length;
+                  if (wc === 0) return null;
+                  const overAi = wc > 30_000;
+                  const overPlag = wc > 60_000;
+                  return (
+                    <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                      overPlag
+                        ? 'bg-rose-100 text-rose-700'
+                        : overAi
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      <span>~{wc.toLocaleString()} words</span>
+                      {overPlag && <span>· exceeds 60k plag limit</span>}
+                      {!overPlag && overAi && <span>· AI detection will be skipped</span>}
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <>
-                <div className="w-14 h-14 rounded-2xl bg-amber-50/80 flex items-center justify-center text-3xl mb-2">
-                  📁
-                </div>
                 <p className="text-sm font-bold text-slate-800 mb-1">
                   Drop your file here
                 </p>
                 <p className="text-xs text-slate-500 mb-4">
-                  or click to browse 📁
+                  or click to browse
                 </p>
-
-                {/* Accepted types pills matching screenshot */}
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">
-                    📄 PDF
-                  </span>
-                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">
-                    📝 DOCX
-                  </span>
-                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">
-                    📃 TXT
-                  </span>
+                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">PDF</span>
+                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">DOCX</span>
+                  <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">TXT</span>
                 </div>
               </>
             )}
           </div>
-        ) : (
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={inputTitle}
-              onChange={e => setInputTitle(e.target.value)}
-              placeholder="Document Title (e.g., Literature_Review.docx)"
-              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-            <textarea
-              value={pastedText}
-              onChange={e => setPastedText(e.target.value)}
-              rows={6}
-              placeholder="Paste article, essay, or dissertation text here to scan..."
-              className="w-full bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-          </div>
-        )}
 
-        {uploadError && !pasteMode && (
+        {uploadError && (
           <div
             className="mt-3 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left"
             role="alert"
@@ -452,27 +455,31 @@ export const DashboardView: React.FC = () => {
         )}
 
         {/* Bottom Actions: Analyze Button */}
-        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 truncate text-xs text-slate-400">
-            {isPreparingFile
-              ? `Preparing: ${preparingFileName}`
-              : uploadedFile
-              ? `Selected: ${uploadedFile.name}`
-              : 'Click Analyze to generate full Turnitin-grade report'}
+        <div className="flex flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Credits */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-400">Cost:</span>
+            <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+              {currentCost} cr
+            </span>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-400">Balance:</span>
+            <span className={`font-bold ${hasSufficientCredits ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {currentUser.credits} cr
+            </span>
           </div>
 
           <button
             onClick={handleAnalyze}
-            disabled={!hasSufficientCredits || isScanning || isPreparingFile || !uploadedFile?.docData?.text}
+            disabled={!hasSufficientCredits || isScanning || isPreparingFile || !uploadedFile?.docData?.text || (viewMode === null && selectedMode !== 'ai')}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md ${
-              hasSufficientCredits && !isScanning
+              hasSufficientCredits && !isScanning && (viewMode !== null || selectedMode === 'ai')
                 ? 'bg-gradient-to-r from-[#4f46e5] to-[#6366f1] hover:from-[#4338ca] hover:to-[#4f46e5] text-white shadow-indigo-500/25 cursor-pointer active:scale-98'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
             }`}
             id="btn-analyze"
           >
             <span>Analyze</span>
-            <span>📊</span>
           </button>
         </div>
       </div>
@@ -482,7 +489,7 @@ export const DashboardView: React.FC = () => {
         {/* Table Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-base">📁</span>
+            <FileText className="w-4 h-4 text-slate-400" />
             <h2 className="text-sm font-bold text-slate-900">Recent Reports</h2>
           </div>
           <button
@@ -497,7 +504,6 @@ export const DashboardView: React.FC = () => {
         {/* Content: Empty state or Table */}
         {reports.length === 0 ? (
           <div className="py-16 px-4 text-center flex flex-col items-center justify-center gap-3">
-            <div className="text-4xl mb-1">📬</div>
             <p className="text-xs text-slate-500 font-medium">
               No reports yet. Upload a document above to get started.
             </p>
@@ -525,6 +531,11 @@ export const DashboardView: React.FC = () => {
                         <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                         <span className="truncate">{rep.title}</span>
                       </div>
+                      {(rep.classicAuthor || rep.author) && (
+                        <div className="text-[10px] text-slate-400 mt-0.5 ml-5.5 truncate">
+                          Author: <span className="text-slate-600 font-medium">{rep.classicAuthor || rep.author}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
                       <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium text-[11px]">
@@ -612,6 +623,7 @@ export const DashboardView: React.FC = () => {
             </table>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
-﻿import jsPDF from 'jspdf';
+import jsPDF from 'jspdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-import { ScanReport } from '../types';
+import { MatchedSource, ScanReport } from '../types';
 import { clampSimilarityScore } from './documentParser';
 import { getReportPageLayout, getReportPdfFileName } from './reportPageLayout';
 import { DEFAULT_INSTITUTION_NAME, getInstitutionName } from './institutionName';
@@ -1993,6 +1993,640 @@ export function drawUniversalManuscriptPdfPage(
   }
 }
 
+export function formatClassicSubmissionDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  if (/\d{2}-[A-Za-z]{3}-\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)\s*\(UTC[+-]\d{4}\)/i.test(dateStr)) return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = pad(d.getDate());
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  const minutes = pad(d.getMinutes());
+  return `${day}-${month}-${year} ${pad(hours)}:${minutes}${ampm} (UTC+0500)`;
+}
+
+export function formatTurnitinSubmissionId(id?: string): string {
+  if (!id) {
+    const randomNine = Math.floor(100000000 + Math.random() * 900000000).toString();
+    return `30${randomNine}`;
+  }
+  const digits = id.replace(/\D/g, '');
+  if (digits.startsWith('30') && digits.length === 11) {
+    return digits;
+  }
+  if (digits.length >= 9) {
+    return `30${digits.slice(-9)}`;
+  }
+  return `30${digits.padStart(9, '0')}`;
+}
+
+export function cleanClassicSubmissionId(id?: string): string {
+  return formatTurnitinSubmissionId(id);
+}
+
+export function formatClassicFileName(fileName?: string, title?: string, fileSize?: string): string {
+  const name = fileName || title || 'Untitled';
+  if (!fileSize) return name;
+  const cleanSize = fileSize.replace(/\s+/g, '').replace(/MB$/i, 'M').replace(/KB$/i, 'K');
+  if (name.includes(`(${cleanSize})`)) return name;
+  return `${name} (${cleanSize})`;
+}
+
+export const CLASSIC_SOURCE_PALETTE = [
+  { hex: '#ff0303', r: 255, g: 3, b: 3 },     // 1: Pure Red
+  { hex: '#e70cd6', r: 231, g: 12, b: 214 }, // 2: Magenta / Pink
+  { hex: '#8b05ff', r: 139, g: 5, b: 255 },  // 3: Purple / Violet
+  { hex: '#2563eb', r: 37, g: 99, b: 235 },   // 4: Blue
+  { hex: '#059669', r: 5, g: 150, b: 105 },  // 5: Teal / Green
+  { hex: '#ea580c', r: 234, g: 88, b: 12 },   // 6: Orange
+];
+
+export function getClassicSourceType(source: MatchedSource): string {
+  const name = (source.name || '').trim().toLowerCase();
+  if (source.type === 'student_paper' || name.startsWith('submitted to')) {
+    return 'Student Paper';
+  }
+  // If the source name looks like a domain / internet hostname or has domain extensions
+  if (
+    source.type === 'internet' ||
+    /\.(?:com|org|net|edu|in|gov|io|co|ai|pk|ac|uk|info|biz)\b/i.test(name) ||
+    name.includes('wikipedia') ||
+    name.includes('.com') ||
+    name.includes('.in') ||
+    name.includes('.edu') ||
+    name.includes('.org')
+  ) {
+    return 'Internet Source';
+  }
+  if (
+    source.type === 'publication' ||
+    name.includes('archive') ||
+    name.includes('journal') ||
+    name.includes('repository') ||
+    name.includes('sciencedirect') ||
+    name.includes('springer') ||
+    name.includes('ieee') ||
+    name.includes('researchgate')
+  ) {
+    return 'Publication';
+  }
+  return 'Internet Source';
+}
+
+export function drawClassicCoverPage(
+  pdf: jsPDF,
+  report: ScanReport,
+  authorName: string,
+  resolvedOwner: string,
+  width: number
+) {
+  // GS-1-style title page: Author name by Profile owner name
+  // Exactly matching sample position (19.5% from top), sans-serif (helvetica normal), and warm dark tone (#2c2c2c)
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(18);
+  pdf.setTextColor(44, 44, 44);
+  pdf.text(authorName, width / 2, 175, { align: 'center', maxWidth: width - 80 });
+
+  // Byline: "by " in italic, owner name in upright normal (not italic), centered together
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'italic');
+  const byText = 'by ';
+  const byWidth = pdf.getTextWidth(byText);
+
+  pdf.setFont('helvetica', 'normal');
+  const ownerWidth = pdf.getTextWidth(resolvedOwner);
+
+  const totalBylineWidth = byWidth + ownerWidth;
+  const startX = (width - totalBylineWidth) / 2;
+
+  pdf.setFont('helvetica', 'italic');
+  pdf.setTextColor(44, 44, 44);
+  pdf.text(byText, startX, 198);
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(44, 44, 44);
+  pdf.text(resolvedOwner, startX + byWidth, 198);
+
+  // Thin separator rule above metadata
+  const coverMargin = 26;
+  const lineY = 735;
+  pdf.setDrawColor(225, 229, 235);
+  pdf.setLineWidth(0.5);
+  pdf.line(coverMargin, lineY, width - coverMargin, lineY);
+
+  // Bottom metadata block with bold labels and clean values matching sample format
+  const cleanId = cleanClassicSubmissionId(report.submissionId);
+  const formattedDate = formatClassicSubmissionDate(report.submissionDate || report.date);
+  const formattedFileName = formatClassicFileName(report.fileName, report.title, report.fileSize);
+  const titleDetails = [
+    { label: 'Submission date: ', value: formattedDate },
+    { label: 'Submission ID: ', value: cleanId },
+    { label: 'File name: ', value: formattedFileName },
+    { label: 'Word count: ', value: report.wordCount.toLocaleString() },
+    { label: 'Character count: ', value: report.characterCount.toLocaleString() },
+  ];
+
+  pdf.setFontSize(7.2);
+  pdf.setTextColor(17, 24, 39);
+  let metaY = 749;
+  const metaLineHeight = 11.5;
+  titleDetails.forEach(item => {
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(17, 24, 39);
+    pdf.text(item.label, coverMargin, metaY);
+    const labelWidth = pdf.getTextWidth(item.label);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(75, 85, 99);
+    pdf.text(item.value, coverMargin + labelWidth, metaY);
+    metaY += metaLineHeight;
+  });
+}
+
+export function drawClassicSummaryPage(
+  pdf: jsPDF,
+  report: ScanReport,
+  authorName: string,
+  sources: MatchedSource[],
+  width: number
+) {
+  const sumMargin = 22;
+  const contentInset = 9; // 2-3 spaces inset from divider line margin
+
+  // Header: Author name in black, unbold, starts after 2-3 spaces
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(10.5);
+  pdf.setTextColor(17, 24, 39);
+  pdf.text(authorName, sumMargin + contentInset, 42);
+
+  // Divider line 1 (crisp medium gray #999999)
+  pdf.setDrawColor(153, 153, 153);
+  pdf.setLineWidth(0.75);
+  pdf.line(sumMargin, 48, width - sumMargin, 48);
+
+  // ORIGINALITY REPORT (unbold pure red #ff0000, 25% reduced to 5.6pt, starts after 2-3 spaces)
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(5.6);
+  pdf.setTextColor(255, 0, 0);
+  pdf.text('ORIGINALITY REPORT', sumMargin + contentInset, 57);
+
+  // Divider line 2
+  pdf.setDrawColor(182, 182, 182);
+  pdf.setLineWidth(0.5);
+  pdf.line(sumMargin, 62, width - sumMargin, 62);
+
+  // 4 Metric Columns (indented consistently after 2-3 spaces)
+  const metricStartX = sumMargin + contentInset;
+  const metricUsableWidth = width - (sumMargin + contentInset) * 2;
+  const colWidth = metricUsableWidth / 4;
+  const sourceDistribution = report.sourceDistribution;
+  const metrics = [
+    { value: report.plagiarismScore ?? 0, label: 'SIMILARITY INDEX', isRed: true },
+    { value: sourceDistribution?.internet ?? report.sources?.length ?? 0, label: 'INTERNET SOURCES', isRed: false },
+    { value: sourceDistribution?.publications ?? 1, label: 'PUBLICATIONS', isRed: false },
+    { value: sourceDistribution?.studentPapers ?? 0, label: 'STUDENT PAPERS', isRed: false },
+  ];
+
+  metrics.forEach((m, idx) => {
+    const colX = metricStartX + idx * colWidth;
+    const numStr = String(m.value);
+
+    if (m.isRed) {
+      pdf.setTextColor(255, 0, 0); // Pure red #ff0000 for similarity percentage
+    } else {
+      pdf.setTextColor(0, 0, 0); // Black for other numbers
+    }
+
+    // Number (large 26 pt normal/unbold matching sample)
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(26);
+    pdf.text(numStr, colX, 92);
+    const numW = pdf.getTextWidth(numStr);
+
+    // % symbol sits right at the bottom baseline (unbold, matches number color)
+    pdf.setFontSize(13);
+    pdf.text('%', colX + numW + 1, 92);
+
+    // Metric Label in black (normal/unbold)
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.8);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(m.label, colX, 104);
+  });
+
+  // Divider line 3 below metrics (with breathing room at y = 114)
+  pdf.setDrawColor(153, 153, 153);
+  pdf.setLineWidth(0.75);
+  pdf.line(sumMargin, 114, width - sumMargin, 114);
+
+  // PRIMARY SOURCES header (normal/unbold pure red #ff0000, 25% reduced to 5.6pt, starts after 2-3 spaces)
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(5.6);
+  pdf.setTextColor(255, 0, 0);
+  pdf.text('PRIMARY SOURCES', sumMargin + contentInset, 126);
+
+  // Divider line 4 below PRIMARY SOURCES
+  pdf.setDrawColor(188, 188, 188);
+  pdf.setLineWidth(0.5);
+  pdf.line(sumMargin, 131, width - sumMargin, 131);
+
+  // Primary Sources Rows (starts after 2-3 spaces from divider line)
+  const sourceRows = sources.length > 0
+    ? sources.slice(0, 10)
+    : [{ id: 'none', name: 'No matching source', url: '', similarity: 0, type: 'internet' as const }];
+
+  let sourceY = 138;
+  const badgeSize = 20; // 20x20 pt prominent solid square badge matching sample!
+
+  sourceRows.forEach((source, index) => {
+    const color = CLASSIC_SOURCE_PALETTE[index % CLASSIC_SOURCE_PALETTE.length];
+    const badgeX = sumMargin + contentInset;
+    const badgeY = sourceY;
+
+    // Solid colored square badge (sharp square)
+    pdf.setFillColor(color.r, color.g, color.b);
+    pdf.rect(badgeX, badgeY, badgeSize, badgeSize, 'F');
+
+    // Centered white number inside badge
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(String(index + 1), badgeX + badgeSize / 2, badgeY + badgeSize - 5, { align: 'center' });
+
+    // Text position
+    const textX = badgeX + badgeSize + 11;
+    const titleY = badgeY + 10.5;
+
+    // Measure percentage on right to know max title width
+    const simStr = String(source.similarity);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    const pctSignWidth = pdf.getTextWidth('%');
+    pdf.setFontSize(20);
+    const numWidth = pdf.getTextWidth(simStr);
+    const totalPctWidth = numWidth + pctSignWidth + 2;
+    const pctRight = width - sumMargin - contentInset;
+    const maxTitleWidth = pctRight - textX - totalPctWidth - 14;
+
+    // Title in badge color (medium/normal weight, matching sample single-pixel strokes)
+    let title = source.name;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10.5);
+    pdf.setTextColor(color.r, color.g, color.b);
+    if (pdf.getTextWidth(title) > maxTitleWidth) {
+      while (title.length > 3 && pdf.getTextWidth(title + '...') > maxTitleWidth) {
+        title = title.slice(0, -1);
+      }
+      title = title + '...';
+    }
+    pdf.text(title, textX, titleY);
+
+    // Subtitle (source type) in light gray (#a8a8a8)
+    const subY = titleY + 11;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.8);
+    pdf.setTextColor(168, 168, 168);
+    const sourceType = getClassicSourceType(source);
+    pdf.text(sourceType, textX, subY);
+
+    // Right-aligned percentage (huge 20 pt number, baseline aligned with 11 pt % sign!)
+    const pctBaseline = titleY + 5;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(52, 52, 52); // Charcoal #343434
+
+    pdf.setFontSize(11);
+    pdf.text('%', pctRight, pctBaseline, { align: 'right' });
+
+    pdf.setFontSize(20);
+    pdf.text(simStr, pctRight - pctSignWidth - 1, pctBaseline, { align: 'right' });
+
+    // Divider line below row
+    const rowBottom = badgeY + badgeSize + 11;
+    pdf.setDrawColor(190, 190, 190);
+    pdf.setLineWidth(0.5);
+    pdf.line(sumMargin, rowBottom, width - sumMargin, rowBottom);
+
+    sourceY = rowBottom + 8;
+  });
+
+  // Divider line above exclusions (moved down by one line spacing)
+  const exclLineY = sourceY + 36;
+  pdf.setDrawColor(216, 216, 216); // #d8d8d8
+  pdf.setLineWidth(0.5);
+  pdf.line(sumMargin, exclLineY, width - sumMargin, exclLineY);
+
+  // Exclusions Section (starts after 2-3 spaces from divider line)
+  const exclY = exclLineY + 12;
+  const col1X = sumMargin + contentInset;
+  const col1ValX = col1X + 110;
+  const col2X = col1X + 274; // Shifted by 8 spaces
+  const col2ValX = col2X + 95;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(163, 163, 163);
+
+  // Row 1
+  pdf.text('Exclude quotes', col1X, exclY);
+  pdf.text(report.excludeQuotes ? 'On' : 'Off', col1ValX, exclY);
+
+  pdf.text('Exclude matches', col2X, exclY);
+  pdf.text('Off', col2ValX, exclY);
+
+  // Row 2
+  pdf.text('Exclude bibliography', col1X, exclY + 12);
+  pdf.text(report.excludeBibliography ? 'On' : 'Off', col1ValX, exclY + 12);
+}
+
+export function drawClassicReferencesPage(
+  pdf: jsPDF,
+  sources: MatchedSource[],
+  width: number,
+  height: number,
+  margin: number,
+  pageNumber: number
+) {
+  pdf.setFont('times', 'bold');
+  pdf.setFontSize(13);
+  pdf.setTextColor(17, 24, 39);
+  pdf.text('References', width / 2, 58, { align: 'center' });
+  pdf.setFont('times', 'normal');
+  pdf.setFontSize(10);
+  let referenceY = 92;
+  const references = sources.slice(0, 3);
+  if (references.length === 0) pdf.text('No matching references were found.', margin, referenceY);
+  references.forEach((source, index) => {
+    pdf.setTextColor(122, 30, 74);
+    const label = `${index + 1}. ${source.name}`;
+    pdf.setFontSize(10);
+    const splitLabel = pdf.splitTextToSize(label, width - margin * 2);
+    pdf.text(splitLabel, margin, referenceY);
+    referenceY += splitLabel.length * 13;
+    if (source.url) {
+      pdf.setTextColor(37, 99, 235);
+      pdf.setFontSize(8);
+      const urlLines = pdf.splitTextToSize(source.url, width - margin * 2);
+      pdf.text(urlLines, margin, referenceY);
+      referenceY += urlLines.length * 10 + 20;
+      pdf.setFontSize(10);
+    } else {
+      referenceY += 20;
+    }
+  });
+
+  pdf.setFont('times', 'normal');
+  pdf.setFontSize(11);
+  pdf.setTextColor(17, 24, 39);
+  pdf.text(String(pageNumber), width / 2, height - 28, { align: 'center' });
+}
+
+export async function downloadClassicReportPdf(
+  report: ScanReport,
+  onProgress?: (current: number, total: number) => void,
+  ownerName?: string
+): Promise<void> {
+  const authorName = report.classicAuthor?.trim() || report.author?.trim() || 'Author';
+  const resolvedOwner = ownerName?.trim() || report.ownerName?.trim() || 'Kunal Kumar';
+  const sources = report.sources || [];
+  const baseName = (report.fileName || report.title || 'Classic_Report')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim() || 'Classic_Report';
+
+  // If authentic PDF from LibreOffice conversion is available, merge with Classic Cover & Summary pages
+  if (report.fileData) {
+    try {
+      const coverDoc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const width = coverDoc.internal.pageSize.getWidth();
+      const height = coverDoc.internal.pageSize.getHeight();
+      drawClassicCoverPage(coverDoc, report, authorName, resolvedOwner, width);
+
+      const summaryDoc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      drawClassicSummaryPage(summaryDoc, report, authorName, sources, width);
+
+      let refDoc: jsPDF | null = null;
+      if (sources.length > 0) {
+        refDoc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      }
+
+      const finalPdfDoc = await PDFDocument.create();
+
+      // 1. Cover Page
+      const coverPdf = await PDFDocument.load(coverDoc.output('arraybuffer'));
+      const [copiedCover] = await finalPdfDoc.copyPages(coverPdf, [0]);
+      finalPdfDoc.addPage(copiedCover);
+
+      // 2. User Document Pages (converted with 100% authentic layout by LibreOffice)
+      const userBytes = base64ToUint8Array(report.fileData);
+      const userPdfDoc = await PDFDocument.load(userBytes, { ignoreEncryption: true });
+      const userPageCount = userPdfDoc.getPageCount();
+      const userPageIndices = Array.from({ length: userPageCount }, (_, i) => i);
+      const copiedUserPages = await finalPdfDoc.copyPages(userPdfDoc, userPageIndices);
+
+      const timesFont = await finalPdfDoc.embedStandardFont(StandardFonts.TimesRoman);
+      const helveticaBold = await finalPdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
+
+      // Load user document via pdfjsLib for highlight coordinate extraction
+      let pdfjsDoc: any = null;
+      try {
+        const loadingTask = pdfjsLib.getDocument({
+          data: userBytes,
+          useSystemFonts: true,
+        });
+        pdfjsDoc = await loadingTask.promise;
+      } catch (pdfjsErr) {
+        console.warn('pdfjsLib loading notice for classic highlight extraction:', pdfjsErr);
+      }
+
+      for (let i = 0; i < copiedUserPages.length; i++) {
+        const page = copiedUserPages[i];
+        const pageWidth = page.getWidth();
+        const pageHeight = page.getHeight();
+
+        // Extract text items and compute highlights for this page (matching new view logic)
+        if (pdfjsDoc) {
+          try {
+            const pdfjsPage = await pdfjsDoc.getPage(i + 1);
+            const viewport = pdfjsPage.getViewport({ scale: 1 });
+            const textContent = await pdfjsPage.getTextContent();
+            const rawItems: RawTextItem[] = [];
+
+            for (const item of textContent.items as any[]) {
+              if (!item.str || !item.transform) continue;
+              const [vx, vy] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+              const fontSize = Math.sqrt(item.transform[0] ** 2 + item.transform[1] ** 2);
+              const top = Math.max(0, vy - fontSize * 0.78);
+              const w = (item.width || 0) * viewport.scale;
+              const h = Math.max(fontSize * 0.88, 1);
+              rawItems.push({
+                str: item.str,
+                left: vx,
+                top,
+                width: Math.max(w, 4),
+                height: h,
+                fontSize,
+              });
+            }
+
+            const pageHighlights = computeHighlightsForPage(
+              rawItems,
+              pageWidth,
+              pageHeight,
+              i,
+              report,
+              'similarity'
+            );
+
+            for (const hl of pageHighlights) {
+              const theme = getHighlightTheme(hl.type, hl.sourceIndex);
+              page.drawRectangle({
+                x: hl.left,
+                y: pageHeight - hl.top - hl.height,
+                width: hl.width,
+                height: hl.height,
+                color: rgb(theme.pdfColor.r, theme.pdfColor.g, theme.pdfColor.b),
+                opacity: 0.58,
+              });
+
+              if (hl.showBadge && hl.badgeNumber) {
+                const badgeX = hl.badgeLeft ?? Math.max(10, hl.left - 15);
+                const badgeY = pageHeight - (hl.badgeTop ?? hl.top) - 10;
+                const badgeColor =
+                  hl.badgeNumber === 1
+                    ? rgb(220 / 255, 38 / 255, 38 / 255)
+                    : hl.badgeNumber === 2
+                    ? rgb(37 / 255, 99 / 255, 235 / 255)
+                    : hl.badgeNumber === 3
+                    ? rgb(5 / 255, 150 / 255, 105 / 255)
+                    : rgb(124 / 255, 58 / 255, 237 / 255);
+
+                page.drawCircle({
+                  x: badgeX + 5,
+                  y: badgeY + 5,
+                  size: 5,
+                  color: badgeColor,
+                });
+
+                page.drawText(`${hl.badgeNumber}`, {
+                  x: badgeX + 3.2,
+                  y: badgeY + 3.2,
+                  size: 5.5,
+                  font: helveticaBold,
+                  color: rgb(1, 1, 1),
+                });
+              }
+            }
+          } catch (hlErr) {
+            console.warn(`Highlight extraction notice on classic page ${i + 1}:`, hlErr);
+          }
+        }
+
+        const pageNumStr = String(i + 1);
+        const fontSize = 11;
+        const textWidth = timesFont.widthOfTextAtSize(pageNumStr, fontSize);
+        page.drawText(pageNumStr, {
+          x: (pageWidth - textWidth) / 2,
+          y: 28,
+          size: fontSize,
+          font: timesFont,
+          color: rgb(17 / 255, 24 / 255, 39 / 255),
+        });
+        finalPdfDoc.addPage(page);
+      }
+
+      // 3. Summary Page (No artificial References page)
+      const summaryPdf = await PDFDocument.load(summaryDoc.output('arraybuffer'));
+      const [copiedSummary] = await finalPdfDoc.copyPages(summaryPdf, [0]);
+      finalPdfDoc.addPage(copiedSummary);
+
+      const finalPdfBytes = await finalPdfDoc.save();
+      downloadPdfFromBytes(finalPdfBytes, `${baseName}- plag report.pdf`);
+      onProgress?.(finalPdfDoc.getPageCount(), finalPdfDoc.getPageCount());
+      return;
+    } catch (mergeErr) {
+      console.warn('Classic report LibreOffice PDF merge notice, falling back to text engine:', mergeErr);
+    }
+  }
+
+  // Fallback when fileData is not present (text-only manuscript generator)
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const width = pdf.internal.pageSize.getWidth();
+  const height = pdf.internal.pageSize.getHeight();
+  const margin = 40;
+
+  const addFooterPageNumber = (pageNumber: number) => {
+    pdf.setFont('times', 'normal');
+    pdf.setFontSize(11);
+    pdf.setTextColor(17, 24, 39);
+    pdf.text(String(pageNumber), width / 2, height - 28, { align: 'center' });
+  };
+
+  const addPage = () => {
+    if (pdf.getNumberOfPages() > 0) pdf.addPage();
+  };
+
+  const sourceText = (report.text || report.contentSample || 'No readable manuscript text was found.')
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  pdf.setFont('times', 'normal');
+  pdf.setFontSize(10);
+  const availableWidth = width - margin * 2 - 18;
+  const rawParagraphs = sourceText.split(/\n\n+/).filter(Boolean);
+  const allLines: string[] = [];
+  rawParagraphs.forEach((para, pIdx) => {
+    if (pIdx > 0) allLines.push('');
+    const pLines = pdf.splitTextToSize(para.trim(), availableWidth);
+    allLines.push(...pLines);
+  });
+  const linesPerPage = 44;
+  const manuscriptLines: string[][] = [];
+  for (let index = 0; index < allLines.length; index += linesPerPage) {
+    manuscriptLines.push(allLines.slice(index, index + linesPerPage));
+  }
+  if (manuscriptLines.length === 0) manuscriptLines.push(['No readable manuscript text was found.']);
+  const totalPages = manuscriptLines.length + 2;
+
+  // Title Page
+  drawClassicCoverPage(pdf, report, authorName, resolvedOwner, width);
+
+  // Manuscript pages
+  manuscriptLines.forEach((lines, index) => {
+    addPage();
+    pdf.setTextColor(17, 24, 39);
+    if (index === 0) {
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(14);
+      pdf.text(authorName, width / 2, 58, { align: 'center', maxWidth: width - 80 });
+      pdf.setFont('times', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(resolvedOwner, width / 2, 74, { align: 'center', maxWidth: width - 80 });
+    }
+
+    pdf.setFont('times', 'normal');
+    pdf.setFontSize(10);
+    let y = index === 0 ? 98 : 58;
+    const lineHeight = 14.8;
+    lines.forEach((line, lineIndex) => {
+      const paragraphStart = lineIndex === 0 || lines[lineIndex - 1] === '';
+      pdf.text(line, paragraphStart ? margin + 18 : margin, y, { align: 'left', maxWidth: availableWidth });
+      y += lineHeight;
+    });
+    addFooterPageNumber(index + 1);
+  });
+
+  // Summary page (No artificial references page)
+  addPage();
+  drawClassicSummaryPage(pdf, report, authorName, sources, width);
+
+  onProgress?.(totalPages, totalPages);
+  pdf.save(`${baseName}- plag report.pdf`);
+}
+
 /**
  * Generates and downloads a 100% pure vector-rendered PDF document.
  * Every word, heading, highlight, badge, and rule is drawn as native vector elements.
@@ -2003,8 +2637,14 @@ export function drawUniversalManuscriptPdfPage(
 export async function downloadReportPdf(
   report: ScanReport,
   mode: 'ai' | 'similarity' = 'similarity',
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  ownerName?: string
 ): Promise<void> {
+  if (report.reportStyle === 'classic') {
+    await downloadClassicReportPdf(report, onProgress, ownerName);
+    return;
+  }
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',

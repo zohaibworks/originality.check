@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { ScanReport, MatchedSource, HighlightedSnippet } from '../types';
+import { useApp } from '../context/AppContext';
 import { OriginalityCheckLogo } from './OriginalityCheckLogo';
 import { cleanText, MAX_SIMILARITY_SCORE } from '../utils/documentParser';
-import { downloadReportPdf } from '../utils/pdfGenerator';
+import { downloadReportPdf, formatTurnitinSubmissionId } from '../utils/pdfGenerator';
 import { TurnitinOfficialMultiPageReport } from './TurnitinOfficialMultiPageReport';
+import { ClassicReport } from './ClassicReport';
 import {
   X,
   Download,
@@ -36,6 +38,7 @@ interface ReportModalProps {
 }
 
 export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => {
+  const { currentUser } = useApp();
   const [activeMode, setActiveMode] = useState<'all' | 'similarity' | 'ai' | 'comparison'>(() =>
     report?.type === 'AI Detection' ? 'ai' : report?.type === 'Plagiarism Check' ? 'similarity' : 'all'
   );
@@ -73,7 +76,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
     ? Math.min(MAX_SIMILARITY_SCORE, Math.max(1, adjustedPlagScore))
     : 0;
 
-  const submissionId = report.submissionId || `trn:oid:${Math.floor(21948194812)}`;
+  const submissionId = formatTurnitinSubmissionId(report.submissionId);
 
   // Format AI score display: 1% to 20% shows *%, >20% shows exact %, 0% shows 0%
   const isAiUnderThreshold = report.aiScore > 0 && report.aiScore <= 20;
@@ -131,7 +134,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
   const handleDownloadPdf = async () => {
     try {
       setIsExportingPdf(true);
-      await downloadReportPdf(report);
+      await downloadReportPdf(report, 'similarity', undefined, currentUser?.name);
     } catch (err) {
       console.error('PDF export error:', err);
     } finally {
@@ -168,7 +171,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 truncate">
-                Author: <span className="text-slate-200 font-semibold">{report.author}</span> • {report.date} • {report.wordCount.toLocaleString()} words • {report.characterCount.toLocaleString()} characters
+                Author: <span className="text-slate-200 font-semibold">{report.classicAuthor || report.author}</span> • {report.date} • {report.wordCount.toLocaleString()} words • {report.characterCount.toLocaleString()} characters
               </p>
             </div>
           </div>
@@ -177,7 +180,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="flex items-center bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 text-xs font-bold text-white mr-1">
               <FileCheck className="w-3.5 h-3.5 mr-1.5" />
-              <span>Official Report (No Cutting)</span>
+              <span>{report.reportStyle === 'classic' ? 'Classic Report' : 'Official Report (No Cutting)'}</span>
             </div>
 
             {/* View Digital Receipt */}
@@ -202,11 +205,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({ report, onClose }) => 
         </header>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          <TurnitinOfficialMultiPageReport
-            report={report}
-            defaultType={report.type === 'AI Detection' ? 'ai' : 'similarity'}
-            allowBothModes={report.type === 'Both'}
-          />
+          {report.reportStyle === 'classic' ? (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <ClassicReport report={report} />
+            </div>
+          ) : (
+            <TurnitinOfficialMultiPageReport
+              report={report}
+              defaultType={report.type === 'AI Detection' ? 'ai' : 'similarity'}
+              allowBothModes={report.type === 'Both'}
+            />
+          )}
         </div>
 
         {/* DIGITAL RECEIPT MODAL */}

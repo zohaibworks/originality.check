@@ -21,7 +21,7 @@ interface ReportsViewProps {
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ onOpenReport }) => {
-  const { reports, deleteReport, setNotification } = useApp();
+  const { reports, deleteReport, setNotification, currentUser } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('All Status');
   const [selectedType, setSelectedType] = useState<string>('All Types');
@@ -33,7 +33,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onOpenReport }) => {
     try {
       setDownloadingId(`${rep.id}-${mode}`);
       setActiveDownloadMenu(null);
-      await downloadReportPdf(rep, mode);
+      await downloadReportPdf(rep, mode, undefined, currentUser.name);
       setNotification({ message: 'Report PDF downloaded successfully.', type: 'success' });
     } catch (err) {
       console.error('PDF download error:', err);
