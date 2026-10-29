@@ -2623,46 +2623,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // client cannot reach Firestore (permissions), fall back to localStorage so
       // the user still gets their similarity report and download icon.
       let firestoreOk = false;
-      try {
-        await setDoc(doc(db, 'reports', newReport.id), {
-          ...persistedReport,
-          userId: firebaseUser.uid,
-          expiresAt: newReport.expiresAt,
-        });
+      const transactionId = `tx-${Date.now()}`;
+      const transactionDate = formatPakistanDateTime();
 
-        const transactionId = `tx-${Date.now()}`;
-        const transactionDate = formatPakistanDateTime();
+      try {
         const balanceResult = await runTransaction(db, async transaction => {
           const userRef = doc(db, 'users', firebaseUser.uid);
           const userSnapshot = await transaction.get(userRef);
-          if (!userSnapshot.exists()) {
-            throw new Error('Your Firebase profile is missing. Please sign out and sign in again.');
+          let userData: any = {};
+          let currentBalance = typeof currentUser.credits === 'number' ? currentUser.credits : 0;
+          let currentUsed = typeof currentUser.usedCredits === 'number' ? currentUser.usedCredits : 0;
+          let currentScans = typeof currentUser.totalScans === 'number' ? currentUser.totalScans : 0;
+
+          if (userSnapshot.exists()) {
+            userData = userSnapshot.data();
+            if (typeof userData.planExpiresAt === 'number' && Date.now() >= userData.planExpiresAt) {
+              throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
+            }
+            if (typeof userData.credits === 'number') currentBalance = userData.credits;
+            if (typeof userData.usedCredits === 'number') currentUsed = userData.usedCredits;
+            if (typeof userData.totalScans === 'number') currentScans = userData.totalScans;
           }
-          const userData = userSnapshot.data();
-          if (typeof userData.planExpiresAt === 'number' && Date.now() >= userData.planExpiresAt) {
-            throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
+
+          if (currentBalance < cost) {
+            throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${currentBalance}.`);
           }
-          const availableCredits = typeof userData.credits === 'number' ? userData.credits : 0;
-          if (availableCredits < cost) {
-            throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${availableCredits}.`);
-          }
-          const balanceAfter = availableCredits - cost;
-          const usedCredits = (typeof userData.usedCredits === 'number' ? userData.usedCredits : 0) + cost;
-          const totalScans = (typeof userData.totalScans === 'number' ? userData.totalScans : 0) + 1;
-          transaction.set(userRef, { credits: balanceAfter, usedCredits, totalScans }, { merge: true });
-          transaction.set(doc(db, 'transactions', transactionId), {
+          const balanceAfter = Math.max(0, currentBalance - cost);
+          const usedCredits = currentUsed + cost;
+          const totalScans = currentScans + 1;
+
+          transaction.set(userRef, {
+            credits: balanceAfter,
+            usedCredits,
+            totalScans,
+          }, { merge: true });
+
+          const txnPayload = cleanFirestoreData({
             id: transactionId,
             userId: firebaseUser.uid,
-            userName: currentUser.name,
+            userName: currentUser.name || userData.name || 'User',
             amount: -cost,
             balanceAfter,
             type: 'scan_deduction',
-            note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode]})`,
+            note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
             date: transactionDate,
             timestamp: Date.now(),
           });
+
+          transaction.set(doc(db, 'transactions', transactionId), txnPayload);
           return { balanceAfter, usedCredits, totalScans };
         });
+
+        try {
+          const cleanedReportData = cleanFirestoreData({
+            ...persistedReport,
+            userId: firebaseUser.uid,
+            expiresAt: newReport.expiresAt,
+          });
+          await setDoc(doc(db, 'reports', newReport.id), cleanedReportData);
+        } catch (reportDocErr) {
+          console.warn('Notice while writing report to Firestore, proceeding with credit deduction:', reportDocErr);
+        }
 
         const newBal = balanceResult.balanceAfter;
         setCurrentUser(prev => ({
@@ -2686,15 +2707,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           amount: -cost,
           balanceAfter: newBal,
           type: 'scan_deduction',
-          note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode]})`,
+          note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
           date: transactionDate,
           timestamp: Date.now(),
         };
         setTransactions(prev => [scanTxn, ...prev]);
+        try {
+          const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
+          localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([scanTxn, ...prevStored]));
+        } catch {}
 
         firestoreOk = true;
       } catch (firestoreErr) {
-        console.error('Firestore write failed (non-fatal), saving to localStorage only:', firestoreErr);
+        console.error('Firestore write failed, applying local credit deduction fallback:', firestoreErr);
+        const fallbackBal = Math.max(0, (typeof currentUser.credits === 'number' ? currentUser.credits : 0) - cost);
+        const fallbackUsed = (typeof currentUser.usedCredits === 'number' ? currentUser.usedCredits : 0) + cost;
+        const fallbackScans = (typeof currentUser.totalScans === 'number' ? currentUser.totalScans : 0) + 1;
+
+        setCurrentUser(prev => ({
+          ...prev,
+          credits: fallbackBal,
+          usedCredits: fallbackUsed,
+          totalScans: fallbackScans,
+        }));
+        setUsers(prev => prev.map(user => user.id === currentUser.id || user.id === firebaseUser.uid ? {
+          ...user,
+          credits: fallbackBal,
+          usedCredits: fallbackUsed,
+          totalScans: fallbackScans,
+        } : user));
+
+        const localScanTxn: CreditTransaction = {
+          id: transactionId,
+          userId: currentUser.id || firebaseUser.uid,
+          userName: currentUser.name,
+          amount: -cost,
+          balanceAfter: fallbackBal,
+          type: 'scan_deduction',
+          note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
+          date: transactionDate,
+          timestamp: Date.now(),
+        };
+        setTransactions(prev => [localScanTxn, ...prev]);
+        try {
+          const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
+          localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([localScanTxn, ...prevStored]));
+        } catch {}
+
         const storageKey = getReportsStorageKey(currentUser.id);
         const saved = localStorage.getItem(storageKey);
         let items: ScanReport[] = [];
@@ -2704,11 +2763,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         items = pruneExpiredReports([newReport, ...items.filter(r => r.id !== newReport.id)], currentUser.id);
         try { localStorage.setItem(storageKey, JSON.stringify(items)); } catch {}
         setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
-
-        setNotification({
-          message: 'Scan finished! Report saved locally (cloud sync unavailable).',
-          type: 'info',
-        });
       }
 
       setScanProgress({ step: 'Finalizing report and rendering document...', percent: 100 });
@@ -2717,12 +2771,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setScanProgress(null);
       }, 300);
 
-      if (firestoreOk) {
-        setNotification({
-          message: `Scan finished! Report generated successfully (-${cost} credits).`,
-          type: 'success',
-        });
-      }
+      setNotification({
+        message: `Scan finished! Report generated successfully (-${cost} credit).`,
+        type: 'success',
+      });
 
       return { success: true, report: newReport };
     } catch (error) {
