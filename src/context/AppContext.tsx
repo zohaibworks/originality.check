@@ -2750,13 +2750,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           type: 'scan_deduction',
           note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
           date: transactionDate,
-          timestamp: Date.now(),
+          timestamp: now,
         };
         setTransactions(prev => [localScanTxn, ...prev]);
         try {
           const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
           localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([localScanTxn, ...prevStored]));
         } catch {}
+
+        // Try to sync to Firestore even in fallback so admin sees the deduction
+        try {
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          await runTransaction(db, async transaction => {
+            const userSnapshot = await transaction.get(userRef);
+            if (!userSnapshot.exists()) return;
+            const userData = userSnapshot.data();
+            const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : fallbackBal + cost;
+            const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : fallbackUsed - cost;
+            const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : fallbackScans - 1;
+            if (rawDocCredits < cost) return;
+            transaction.set(userRef, {
+              credits: Math.max(0, rawDocCredits - cost),
+              usedCredits: rawDocUsed + cost,
+              totalScans: rawDocScans + 1,
+            }, { merge: true });
+            transaction.set(doc(db, 'transactions', transactionId), cleanFirestoreData({
+              id: transactionId,
+              userId: firebaseUser.uid,
+              userName: currentUser.name || userData.name || 'User',
+              amount: -cost,
+              balanceAfter: Math.max(0, rawDocCredits - cost),
+              type: 'scan_deduction',
+              note: localScanTxn.note,
+              date: transactionDate,
+              timestamp: now,
+            }));
+          });
+        } catch (syncErr) {
+          console.warn('Could not sync scan deduction to Firestore in fallback:', syncErr);
+        }
+
+        try {
+          await setDoc(doc(db, 'reports', newReport.id), cleanFirestoreData({
+            ...persistedReport,
+            userId: firebaseUser.uid,
+            expiresAt: newReport.expiresAt,
+          }));
+        } catch (reportSyncErr) {
+          console.warn('Could not sync report to Firestore in fallback:', reportSyncErr);
+        }
 
         const storageKey = getReportsStorageKey(currentUser.id);
         const saved = localStorage.getItem(storageKey);
