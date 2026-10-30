@@ -172,6 +172,17 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
  * - Full vector text selection, copy-pasting, and searchability
  */
 export async function convertDocxToPdf(docxBase64: string, originalFileName = 'document.docx'): Promise<ConvertDocxResult> {
+  // In containerized environments, LibreOffice is often flaky - try mammoth first as it's more reliable
+  // and the app's text extraction works fine with it
+  try {
+    const mammothResult = await convertDocxToPdfViaMammoth(docxBase64);
+    if (mammothResult.success) {
+      return mammothResult;
+    }
+  } catch (e) {
+    console.warn('Mammoth fallback failed, trying LibreOffice:', e);
+  }
+
   const libreOfficeBin = getLibreOfficeBinary();
   if (!libreOfficeBin) {
     console.warn('LibreOffice not found — falling back to mammoth text extraction for DOCX conversion.');
@@ -198,17 +209,21 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
     if (extension === '.docx') {
       // Repair empty table-property extensions that some Word exporters place
       // inside table rows; LibreOffice rejects these nodes while Word/Mammoth tolerate them.
-      const docxZip = await JSZip.loadAsync(docxBuffer);
-      const documentXml = docxZip.file('word/document.xml');
-      if (documentXml) {
-        const xml = await documentXml.async('string');
-        const repairedXml = xml
-          .split('<w:tblPrEx></w:tblPrEx>').join('')
-          .split('<w:tblPrEx/>').join('');
-        if (repairedXml !== xml) {
-          docxZip.file('word/document.xml', repairedXml);
-          sourceBuffer = await docxZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+      try {
+        const docxZip = await JSZip.loadAsync(docxBuffer);
+        const documentXml = docxZip.file('word/document.xml');
+        if (documentXml) {
+          const xml = await documentXml.async('string');
+          const repairedXml = xml
+            .split('<w:tblPrEx></w:tblPrEx>').join('')
+            .split('<w:tblPrEx/>').join('');
+          if (repairedXml !== xml) {
+            docxZip.file('word/document.xml', repairedXml);
+            sourceBuffer = await docxZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+          }
         }
+      } catch (zipErr) {
+        console.warn('DOCX zip repair skipped:', zipErr);
       }
     }
     fs.writeFileSync(inputDocxPath, sourceBuffer);
@@ -256,7 +271,8 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
     }
 
     if (!generatedPdfPath) {
-      throw new Error(`LibreOffice did not produce any PDF output. ${lastConversionDiagnostic}`.trim());
+      console.warn('LibreOffice failed, using mammoth fallback');
+      return convertDocxToPdfViaMammoth(docxBase64);
     }
 
     const pdfBuffer = fs.readFileSync(generatedPdfPath);
@@ -273,10 +289,15 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
     };
   } catch (err: any) {
     console.error('LibreOffice DOCX to PDF conversion error:', err);
-    return {
-      success: false,
-      error: err?.message || 'LibreOffice conversion failed',
-    };
+    console.warn('Falling back to mammoth due to LibreOffice error');
+    try {
+      return await convertDocxToPdfViaMammoth(docxBase64);
+    } catch (fallbackErr: any) {
+      return {
+        success: false,
+        error: fallbackErr?.message || err?.message || 'LibreOffice conversion failed',
+      };
+    }
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
