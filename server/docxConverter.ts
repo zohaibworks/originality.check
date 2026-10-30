@@ -105,7 +105,7 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
 
   // Build a basic PDF with pdf-lib
   const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontSize = 11;
   const lineHeight = fontSize * 1.4;
   const pageWidth = 595;  // A4
@@ -116,8 +116,19 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
   const maxWidth = pageWidth - marginX * 2;
   const linesPerPage = Math.floor((pageHeight - marginTop - marginBottom) / lineHeight);
 
+  // Sanitize text for WinAnsi encoding
+  const sanitizedText = rawText
+    .replace(/[\u0100-\u017F\u0180-\u024F]/g, (c) => {
+      try {
+        return c.normalize('NFD').replace(/[\u0300-\u036f]/g, '') || c;
+      } catch {
+        return '?';
+      }
+    })
+    .replace(/[^\x20-\x7E\n\r\t]/g, '?');
+
   // Word-wrap all text lines
-  const paragraphs = rawText.split(/\n/).map(p => p.trim());
+  const paragraphs = sanitizedText.split(/\n/).map(p => p.trim());
   const wrappedLines: string[] = [];
   for (const para of paragraphs) {
     if (!para) { wrappedLines.push(''); continue; }
@@ -125,11 +136,16 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
     let current = '';
     for (const word of words) {
       const test = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
-        current = test;
-      } else {
+      try {
+        if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
+          current = test;
+        } else {
+          if (current) wrappedLines.push(current);
+          current = word.replace(/[^\x20-\x7E]/g, '?');
+        }
+      } catch {
         if (current) wrappedLines.push(current);
-        current = word;
+        current = word.replace(/[^\x20-\x7E]/g, '?');
       }
     }
     if (current) wrappedLines.push(current);
@@ -144,7 +160,11 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
     for (let i = 0; i < linesPerPage && lineIndex < wrappedLines.length; i++, lineIndex++) {
       const line = wrappedLines[lineIndex];
       if (line) {
-        page.drawText(line, { x: marginX, y, size: fontSize, font, color: rgb(0, 0, 0) });
+        try {
+          page.drawText(line, { x: marginX, y, size: fontSize, font, color: rgb(0, 0, 0) });
+        } catch {
+          // Skip problematic lines
+        }
       }
       y -= lineHeight;
     }
