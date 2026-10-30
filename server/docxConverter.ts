@@ -209,17 +209,6 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
  * - Full vector text selection, copy-pasting, and searchability
  */
 export async function convertDocxToPdf(docxBase64: string, originalFileName = 'document.docx'): Promise<ConvertDocxResult> {
-  // In containerized environments, LibreOffice is often flaky - try mammoth first as it's more reliable
-  // and the app's text extraction works fine with it
-  try {
-    const mammothResult = await convertDocxToPdfViaMammoth(docxBase64);
-    if (mammothResult.success) {
-      return mammothResult;
-    }
-  } catch (e) {
-    console.warn('Mammoth fallback failed, trying LibreOffice:', e);
-  }
-
   const libreOfficeBin = getLibreOfficeBinary();
   if (!libreOfficeBin) {
     console.warn('LibreOffice not found — falling back to mammoth text extraction for DOCX conversion.');
@@ -280,6 +269,7 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
         '--norestore',
         '--invisible',
         '--nofirststartwizard',
+        '--accept=socket,host=127.0.0.1,port=2002;urp;',
         `-env:UserInstallation=${pathToFileURL(attemptProfileDir).href}`,
         '--convert-to',
         exportFilter,
@@ -291,11 +281,11 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
       try {
         // Use xvfb if available in container
         if (process.platform !== 'win32' && fs.existsSync('/usr/bin/xvfb-run')) {
-          const xvfbArgs = ['-a', libreOfficeBin, ...args];
-          const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 });
+          const xvfbArgs = ['-a', '-e', '/dev/stdout', '--server-args=-screen 0 1024x768x24', libreOfficeBin, ...args];
+          const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
           lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
         } else {
-          const result = await execFileAsync(libreOfficeBin, args, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 });
+          const result = await execFileAsync(libreOfficeBin, args, { timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
           lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
         }
       } catch (conversionError: any) {
