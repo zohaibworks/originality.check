@@ -98,7 +98,24 @@ async function convertDocxToPdfViaMammoth(docxBase64: string): Promise<ConvertDo
   const docxBuffer = Buffer.from(cleanBase64, 'base64');
 
   // Extract raw text via mammoth
-  const { value: rawText } = await mammoth.extractRawText({ buffer: docxBuffer });
+  let rawText = '';
+  try {
+    const result = await mammoth.extractRawText({ buffer: docxBuffer });
+    rawText = result.value || '';
+  } catch (e) {
+    console.error('Mammoth extractRawText failed:', e);
+  }
+  
+  if (!rawText || rawText.trim().length < 20) {
+    // Try to extract as HTML and strip tags
+    try {
+      const htmlResult = await mammoth.convertToHtml({ buffer: docxBuffer });
+      rawText = htmlResult.value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    } catch (e) {
+      console.error('Mammoth convertToHtml failed:', e);
+    }
+  }
+  
   if (!rawText || rawText.trim().length < 20) {
     return { success: false, error: 'Could not extract readable text from this DOCX file.' };
   }
