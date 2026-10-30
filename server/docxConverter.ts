@@ -280,22 +280,28 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
       ];
 
       try {
-        // Try with xvfb first, fallback to direct
         if (process.platform !== 'win32') {
-          if (fs.existsSync('/usr/bin/xvfb-run')) {
-            try {
-              const xvfbArgs = ['-a', '--server-args=-screen 0 1280x1024x24', libreOfficeBin, ...args];
-              const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
-              lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
-            } catch (e: any) {
-              lastConversionDiagnostic = `${e?.stdout || ''} ${e?.stderr || ''} ${e?.message || ''}`.trim();
-              // try direct
-              const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp', DISPLAY: ':99' } });
-              lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
-            }
-          } else {
-            const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
+          const env = { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' };
+          if (!env.DISPLAY) env.DISPLAY = ':99';
+          // Try direct first (Xvfb started in container)
+          try {
+            const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env });
             lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+          } catch (e: any) {
+            lastConversionDiagnostic = `${e?.stdout || ''} ${e?.stderr || ''} ${e?.message || ''}`.trim();
+            // try with xvfb-run if direct fails
+            if (fs.existsSync('/usr/bin/xvfb-run')) {
+              try {
+                const xvfbArgs = ['-a', '--server-args=-screen 0 1280x1024x24', libreOfficeBin, ...args];
+                const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env });
+                lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+              } catch (e2: any) {
+                lastConversionDiagnostic = `${e2?.stdout || ''} ${e2?.stderr || ''} ${e2?.message || ''}`.trim();
+                throw e2;
+              }
+            } else {
+              throw e;
+            }
           }
         } else {
           const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024 });

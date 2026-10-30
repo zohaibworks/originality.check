@@ -26,6 +26,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 ENV SAL_USE_VCLPLUGIN=svp
 ENV HOME=/tmp
+ENV DISPLAY=:99
 
 RUN mkdir -p /tmp/.config/libreoffice/4/user
 
@@ -40,4 +41,4 @@ RUN npm run build
 ENV NODE_ENV=production
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp & sleep 2 && npm start"]
