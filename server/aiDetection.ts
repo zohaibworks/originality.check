@@ -146,6 +146,17 @@ export async function analyzeTextWithAiOrNot(
         `AI or Not request failed with status ${upstreamResponse.status}.`,
         { providerError, requestId }
       );
+      // If credits exhausted, return a graceful error so the app can continue without AI score
+      if (upstreamResponse.status === 402) {
+        const diagnostic = providerError ? ` ${providerError}` : '';
+        const requestIdDetail = requestId ? ` Request ID: ${requestId}.` : '';
+        return {
+          status: 503,
+          body: {
+            error: `AI detection unavailable: insufficient credits.${diagnostic}${requestIdDetail}`,
+          },
+        };
+      }
       const diagnostic = providerError
         ? ` Provider detail: ${providerError}`
         : upstreamResponse.status === 400

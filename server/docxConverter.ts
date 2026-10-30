@@ -226,6 +226,8 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
         '--headless',
         '--nologo',
         '--norestore',
+        '--invisible',
+        '--nofirststartwizard',
         `-env:UserInstallation=${pathToFileURL(attemptProfileDir).href}`,
         '--convert-to',
         exportFilter,
@@ -235,8 +237,15 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
       ];
 
       try {
-        const result = await execFileAsync(libreOfficeBin, args, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 });
-        lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+        // Use xvfb if available in container
+        if (process.platform !== 'win32' && fs.existsSync('/usr/bin/xvfb-run')) {
+          const xvfbArgs = ['-a', libreOfficeBin, ...args];
+          const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 });
+          lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+        } else {
+          const result = await execFileAsync(libreOfficeBin, args, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 });
+          lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+        }
       } catch (conversionError: any) {
         lastConversionDiagnostic = `${conversionError?.stdout || ''} ${conversionError?.stderr || ''} ${conversionError?.message || ''}`.trim();
       }
