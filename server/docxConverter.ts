@@ -280,13 +280,25 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
       ];
 
       try {
-        // Use xvfb if available in container
-        if (process.platform !== 'win32' && fs.existsSync('/usr/bin/xvfb-run')) {
-          const xvfbArgs = ['-a', '--server-args=-screen 0 1280x1024x24 -noreset', libreOfficeBin, ...args];
-          const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
-          lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+        // Try with xvfb first, fallback to direct
+        if (process.platform !== 'win32') {
+          if (fs.existsSync('/usr/bin/xvfb-run')) {
+            try {
+              const xvfbArgs = ['-a', '--server-args=-screen 0 1280x1024x24', libreOfficeBin, ...args];
+              const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
+              lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+            } catch (e: any) {
+              lastConversionDiagnostic = `${e?.stdout || ''} ${e?.stderr || ''} ${e?.message || ''}`.trim();
+              // try direct
+              const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp', DISPLAY: ':99' } });
+              lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+            }
+          } else {
+            const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
+            lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
+          }
         } else {
-          const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env: { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' } });
+          const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024 });
           lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
         }
       } catch (conversionError: any) {
