@@ -2430,6 +2430,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       let aiScore = 0;
       let aiAnnotations: Array<{ text: string; confidence: number }> = [];
+      let aiDetectionError: string | undefined;
+      let reportMode = options.mode;
       const aiEnabled = options.mode === 'ai' || options.mode === 'both';
       if (aiEnabled) {
         try {
@@ -2483,13 +2485,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           aiScore = result.aiScore;
           aiAnnotations = result.annotations;
         } catch (err) {
-          // AI detection is non-fatal: keep scanning and save the similarity report,
-          // but report aiScore as 0 so no AI report/download is generated.
-          console.error('AI detection failed (non-fatal), continuing with similarity-only scan:', err);
-          setNotification({
-            message: 'AI detection unavailable — similarity report still generated.',
-            type: 'error',
-          });
+          console.error('AI detection request failed:', err);
+          aiDetectionError = err instanceof Error ? err.message : 'Unknown AI detection error.';
+          if (options.mode === 'ai') {
+            throw new Error(`AI detection failed: ${aiDetectionError}`);
+          }
+          reportMode = 'plagiarism';
         }
       }
 
@@ -2564,7 +2565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         author: authorFullName || 'Author',
         classicAuthor: options.classicAuthor?.trim() || (options.reportStyle === 'classic' ? authorFullName : undefined),
         ownerName: profileOwnerName,
-        type: modeNameMap[options.mode] || 'Both',
+        type: modeNameMap[reportMode] || 'Both',
         reportStyle: options.reportStyle,
         status: 'Completed',
         plagiarismScore: plagScore,
@@ -2665,7 +2666,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             amount: -cost,
             balanceAfter,
             type: 'scan_deduction',
-            note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
+            note: `Scanned document: ${options.fileName} (${modeNameMap[reportMode] || 'Both'})`,
             date: transactionDate,
             timestamp: now,
           });
@@ -2712,7 +2713,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           amount: -cost,
           balanceAfter: newBal,
           type: 'scan_deduction',
-          note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
+          note: `Scanned document: ${options.fileName} (${modeNameMap[reportMode] || 'Both'})`,
           date: transactionDate,
           timestamp: now,
         };
@@ -2749,7 +2750,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           amount: -cost,
           balanceAfter: fallbackBal,
           type: 'scan_deduction',
-          note: `Scanned document: ${options.fileName} (${modeNameMap[options.mode] || 'Both'})`,
+          note: `Scanned document: ${options.fileName} (${modeNameMap[reportMode] || 'Both'})`,
           date: transactionDate,
           timestamp: now,
         };
@@ -2858,10 +2859,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setScanProgress(null);
       }, 300);
 
-      setNotification({
-        message: `Scan finished! Report generated successfully (-${cost} credit).`,
-        type: 'success',
-      });
+      setNotification(aiDetectionError
+        ? {
+            message: `AI detection failed: ${aiDetectionError} Similarity report generated successfully (-${cost} credit).`,
+            type: 'error',
+          }
+        : {
+            message: `Scan finished! Report generated successfully (-${cost} credit).`,
+            type: 'success',
+          });
 
       return { success: true, report: newReport };
     } catch (error) {

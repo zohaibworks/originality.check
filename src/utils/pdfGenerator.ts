@@ -187,56 +187,6 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function toBoldUnicode(str: string): string {
-  return Array.from(str, char => {
-    const code = char.codePointAt(0)!;
-    if (code >= 0x30 && code <= 0x39) {
-      return String.fromCodePoint(0x1D7CE + code - 0x30);
-    }
-    if (code >= 0x41 && code <= 0x5A) {
-      return String.fromCodePoint(0x1D400 + code - 0x41);
-    }
-    if (code >= 0x61 && code <= 0x7A) {
-      return String.fromCodePoint(0x1D41A + code - 0x61);
-    }
-    return char;
-  }).join('');
-}
-
-async function renderBoldUnicodeText(text: string): Promise<{
-  dataUrl: string;
-  width: number;
-  height: number;
-}> {
-  await document.fonts.load('700 112px "Times New Roman"');
-  await document.fonts.ready;
-
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('Could not render the AI score heading for the report PDF.');
-  }
-
-  const height = 136;
-  const padding = 8;
-  context.font = '700 112px "Times New Roman", Georgia, "Cambria Math", "Segoe UI Symbol", serif';
-  const width = Math.ceil(context.measureText(text).width) + padding * 2;
-  canvas.width = width;
-  canvas.height = height;
-
-  const headingContext = canvas.getContext('2d');
-  if (!headingContext) {
-    throw new Error('Could not render the AI score heading for the report PDF.');
-  }
-
-  headingContext.font = '700 112px "Times New Roman", Georgia, "Cambria Math", "Segoe UI Symbol", serif';
-  headingContext.fillStyle = '#334155';
-  headingContext.textBaseline = 'alphabetic';
-  headingContext.fillText(text, padding, 110);
-
-  return { dataUrl: canvas.toDataURL('image/png'), width, height };
-}
-
 function shouldHideTurnitinHeaderDivider(pageNum: number, mode: 'ai' | 'similarity') {
   return mode === 'ai' ? pageNum >= 3 : pageNum >= 4;
 }
@@ -2928,22 +2878,10 @@ export async function downloadReportPdf(
     } else {
       aiLabel = `${headingAiScore}% detected as AI`;
     }
-    const heading = await renderBoldUnicodeText(toBoldUnicode(aiLabel));
-    const headingHeight = 19;
-    const headingWidth = heading.width / heading.height * headingHeight;
-    if (isBelowThreshold) {
-      // Draw *% in Helvetica Bold (standard asterisk) then rest in Times Bold, font size 20
-      const fontSize = 18;
-      doc.setFontSize(fontSize);
-      doc.setTextColor(51, 65, 85);
-      doc.setFont('helvetica', 'bold');
-      const prefixWidth = doc.getTextWidth('*%');
-      doc.text('*%', margin, y - 4);
-      doc.setFont('times', 'bold');
-      doc.text(' detected as AI', margin + prefixWidth, y - 4);
-    } else {
-      doc.addImage(heading.dataUrl, 'PNG', margin, y - headingHeight + 3, headingWidth, headingHeight);
-    }
+    doc.setFont('times', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(51, 65, 85);
+    doc.text(aiLabel, margin, y - 4);
 
     // Left: Score-specific AI detection explanation.
     y += isBelowThreshold ? 5 : 8;
