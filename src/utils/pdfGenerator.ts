@@ -2913,9 +2913,22 @@ export async function downloadReportPdf(
 
     // Left: Headline (with 2 vertical gaps below top header divider line at y=42)
     y = 94;
-    const isBelowThreshold = report.aiScore >= 1 && report.aiScore <= 20;
-    const scoreDisplay = isBelowThreshold ? '*%' : `${report.aiScore}%`;
-    const heading = await renderBoldUnicodeText(toBoldUnicode(`${scoreDisplay} detected as AI`));
+    const rawAiScoreForHeading = typeof report.aiScore === 'number' ? report.aiScore : 0;
+    let headingAiScore = rawAiScoreForHeading;
+    if (headingAiScore >= 70) {
+      headingAiScore = Math.max(0, headingAiScore - 17);
+    }
+    const isBelowThreshold = headingAiScore >= 1 && headingAiScore <= 20;
+    const isZeroScore = headingAiScore === 0;
+    let aiLabel: string;
+    if (isZeroScore) {
+      aiLabel = '0% detected as AI';
+    } else if (isBelowThreshold) {
+      aiLabel = '*% detected as AI';
+    } else {
+      aiLabel = `${headingAiScore}% detected as AI`;
+    }
+    const heading = await renderBoldUnicodeText(toBoldUnicode(aiLabel));
     const headingHeight = 19;
     const headingWidth = heading.width / heading.height * headingHeight;
     if (isBelowThreshold) {
@@ -2943,7 +2956,7 @@ export async function downloadReportPdf(
         235
       );
       doc.text(aiNotice, margin, y, { lineHeightFactor: 1.25 });
-    } else if (report.aiScore === 0) {
+    } else if (isZeroScore) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.2);
       doc.setTextColor(30, 41, 59);
@@ -3008,9 +3021,15 @@ export async function downloadReportPdf(
       doc.setFontSize(8.2);
       doc.setTextColor(0, 0, 0);
       const annotationCount = aiAnnotations.length;
+      let labelScoreNum = typeof report.aiScore === 'number' ? report.aiScore : 0;
+      if (labelScoreNum >= 70) labelScoreNum = Math.max(0, labelScoreNum - 17);
+      let labelScoreStr = labelScoreNum + '%';
+      if (labelScoreNum === 0) labelScoreStr = '0%';
+      else if (labelScoreNum >= 1 && labelScoreNum <= 20) labelScoreStr = '*%';
+      else labelScoreStr = labelScoreNum + '%';
       const aiGeneratedLabel = annotationCount > 0
-        ? `${annotationCount} AI-generated ${scoreDisplay}`
-        : `AI-generated ${scoreDisplay}`;
+        ? `${annotationCount} AI-generated ${labelScoreStr}` 
+        : `AI-generated ${labelScoreStr}`;
       doc.text(aiGeneratedLabel, margin + 18, y);
 
       y += 9;

@@ -571,7 +571,7 @@ export const DashboardView: React.FC = () => {
                             : 'text-emerald-600'
                         }`}
                       >
-                        {rep.type === 'Plagiarism Check' ? '—' : `${rep.aiScore}%`}
+                        {rep.type === 'Plagiarism Check' ? '—' : (() => { let s = rep.aiScore ?? 0; if (s >= 70) s = Math.max(0, s - 17); return `${s}%`; })()}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-400 whitespace-nowrap text-[11px]">

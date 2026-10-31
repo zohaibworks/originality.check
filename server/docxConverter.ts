@@ -281,7 +281,7 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
 
       try {
         if (process.platform !== 'win32') {
-          const env = { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' };
+          const env: NodeJS.ProcessEnv = { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' };
           if (!env.DISPLAY) env.DISPLAY = ':99';
           // Try direct first (Xvfb started in container)
           try {
