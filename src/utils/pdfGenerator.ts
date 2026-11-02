@@ -2870,18 +2870,24 @@ export async function downloadReportPdf(
     }
     const isBelowThreshold = headingAiScore >= 1 && headingAiScore <= 20;
     const isZeroScore = headingAiScore === 0;
-    let aiLabel: string;
+    let aiLabel: string | undefined;
     if (isZeroScore) {
       aiLabel = '0% detected as AI';
-    } else if (isBelowThreshold) {
-      aiLabel = '*% detected as AI';
-    } else {
+    } else if (!isBelowThreshold) {
       aiLabel = `${headingAiScore}% detected as AI`;
     }
     doc.setFont('times', 'bold');
     doc.setFontSize(18);
     doc.setTextColor(51, 65, 85);
-    doc.text(aiLabel, margin, y - 4);
+    if (isBelowThreshold) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('*%', margin, y - 4);
+      const prefixWidth = doc.getTextWidth('*%');
+      doc.setFont('times', 'bold');
+      doc.text(' detected as AI', margin + prefixWidth, y - 4);
+    } else if (aiLabel) {
+      doc.text(aiLabel, margin, y - 4);
+    }
 
     // Left: Score-specific AI detection explanation.
     y += isBelowThreshold ? 5 : 8;

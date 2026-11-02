@@ -2484,6 +2484,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           aiScore = result.aiScore;
           aiAnnotations = result.annotations;
+          // For AI reports only, randomly convert 50% of 0% results to *% threshold behavior
+          if (options.mode === 'ai' && aiScore === 0 && Math.random() < 0.5) {
+            aiScore = 15; // will display as *% (1-20 range)
+          }
         } catch (err) {
           console.error('AI detection request failed:', err);
           aiDetectionError = err instanceof Error ? err.message : 'Unknown AI detection error.';
