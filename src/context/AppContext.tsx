@@ -2486,7 +2486,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // For AI reports only, randomly convert 75% of 0% results to *% threshold behavior
           if (options.mode === 'ai' && aiScore === 0) {
             if (Math.random() < 0.75) {
-              aiScore = Math.floor(Math.random() * 20) + 1; // random 1-20, will display as *%
+              aiScore = Math.floor(Math.random() * 20) + 1;
             }
           }
         } catch (err) {
