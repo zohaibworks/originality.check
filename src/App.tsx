@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppProvider, isAdminEmail, useApp } from './context/AppContext';
 import { ClientSidebar } from './components/ClientSidebar';
 import { ClientHeader } from './components/ClientHeader';
@@ -16,6 +16,7 @@ import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const IDLE_WARNING_MS = 30 * 1000;
 const ACTIVITY_STORAGE_PREFIX = 'originality-check:last-activity:';
+const THEME_STORAGE_KEY = 'originality-check:theme';
 
 const AppContent: React.FC = () => {
   const {
@@ -33,8 +34,19 @@ const AppContent: React.FC = () => {
     signOutAuth,
   } = useApp();
   const [showIdleWarning, setShowIdleWarning] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) === 'dark');
   const signOutAuthRef = useRef(signOutAuth);
   signOutAuthRef.current = signOutAuth;
+
+  useEffect(() => {
+    const theme = isDarkMode ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+      'content',
+      isDarkMode ? '#151c26' : '#f5f7fa',
+    );
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (!firebaseUser?.uid) {
@@ -175,7 +187,12 @@ const AppContent: React.FC = () => {
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* Header */}
-            <ClientHeader title={pageInfo.title} iconSuffix={pageInfo.iconSuffix} />
+            <ClientHeader
+              title={pageInfo.title}
+              iconSuffix={pageInfo.iconSuffix}
+              isDarkMode={isDarkMode}
+              onToggleDarkMode={() => setIsDarkMode(value => !value)}
+            />
 
             {/* View Content */}
             <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-8">

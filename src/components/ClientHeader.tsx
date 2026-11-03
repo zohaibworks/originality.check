@@ -8,14 +8,24 @@ import {
   LogOut,
   UserCog,
   CheckCheck,
+  Moon,
+  Sun,
 } from 'lucide-react';
+import { InstallAppButton } from './InstallAppButton';
 
 interface ClientHeaderProps {
   title: string;
   iconSuffix?: string;
+  isDarkMode: boolean;
+  onToggleDarkMode: () => void;
 }
 
-export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix }) => {
+export const ClientHeader: React.FC<ClientHeaderProps> = ({
+  title,
+  iconSuffix,
+  isDarkMode,
+  onToggleDarkMode,
+}) => {
   const {
     currentUser,
     setActivePanel,
@@ -120,6 +130,17 @@ export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix })
 
       {/* Right Controls: Notification Bell, Auth pill, Admin Panel Switcher */}
       <div className="flex w-auto shrink-0 items-center justify-end gap-1.5 sm:gap-3">
+        <button
+          type="button"
+          onClick={onToggleDarkMode}
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+          aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+          aria-pressed={isDarkMode}
+          title={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+        >
+          {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+
         {/* Notification Bell with 5s Diminishing Badge */}
         <div className="relative">
           <button
@@ -238,6 +259,8 @@ export const ClientHeader: React.FC<ClientHeaderProps> = ({ title, iconSuffix })
             </div>
           )}
         </div>
+
+        <InstallAppButton compact />
 
         {/* User Auth Profile & Sign Out */}
         <div className="flex min-w-0 items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50 p-1 shadow-sm">

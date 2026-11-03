@@ -84,18 +84,18 @@ export const ClientSidebar: React.FC = () => {
               title={!isSidebarOpen ? item.label : undefined}
               aria-current={isActive ? 'page' : undefined}
               aria-label={item.label}
-              className={`flex min-h-12 min-w-0 items-center justify-center rounded-xl text-[10px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 md:min-h-11 md:justify-start md:text-sm ${
+              className={`flex min-h-12 min-w-0 items-center justify-center rounded-xl text-[10px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 md:min-h-11 md:justify-start md:text-sm ${
                 isSidebarOpen ? 'flex-col gap-1 px-1.5 py-1.5 md:flex-row md:gap-3 md:px-3.5 md:py-2.5' : 'md:justify-center md:p-2.5'
               } ${
                 isActive
-                  ? 'bg-indigo-600/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                  ? 'bg-blue-600/20 text-blue-200 ring-1 ring-blue-400/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]'
               }`}
             >
               <Icon
                 aria-hidden="true"
                 className={`h-[18px] w-[18px] shrink-0 ${
-                  isActive ? 'text-indigo-400' : 'text-slate-500'
+                  isActive ? 'text-blue-300' : 'text-slate-500'
                 }`}
               />
               {isSidebarOpen && (
@@ -105,7 +105,7 @@ export const ClientSidebar: React.FC = () => {
                 </span>
               )}
               {isSidebarOpen && isActive && (
-                <span className="hidden h-1.5 w-1.5 rounded-full bg-indigo-400 md:ml-auto md:block" />
+                <span className="hidden h-1.5 w-1.5 rounded-full bg-blue-400 md:ml-auto md:block" />
               )}
             </button>
           );

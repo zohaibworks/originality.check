@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { OriginalityCheckLogo } from './OriginalityCheckLogo';
+import { InstallAppButton } from './InstallAppButton';
 import {
   AlertCircle,
   Loader2,
@@ -45,7 +46,7 @@ export const AuthGate: React.FC = () => {
             </p>
           </div>
 
-        <div className="space-y-6 rounded-2xl border border-white/10 bg-[#111a2d]/95 p-5 shadow-2xl shadow-black/30 ring-1 ring-indigo-300/10 sm:p-8">
+        <div className="glass-panel space-y-6 rounded-2xl border border-white/10 bg-[#111a2d]/95 p-5 shadow-2xl shadow-black/30 ring-1 ring-indigo-300/10 sm:p-8">
           {/* Navigation Pill Switcher */}
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-[#0b1220] p-1" role="group" aria-label="Choose sign-in type">
             <button
@@ -216,6 +217,7 @@ export const AuthGate: React.FC = () => {
             </div>
           )}
         </div>
+        <InstallAppButton variant="dark" />
       </div>
     </div>
   );
