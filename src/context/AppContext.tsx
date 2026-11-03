@@ -189,7 +189,7 @@ const STORAGE_KEY_USERS = 'originality_check_users_v1';
 const STORAGE_KEY_REPORTS = 'originality_check_reports_v1';
 const STORAGE_KEY_CODES = 'originality_check_codes_v1';
 const STORAGE_KEY_TXNS = 'originality_check_txns_v1';
-const ONE_DAY_MS = 60 * 60 * 1000; // reports expire after 1 hour
+const REPORT_TTL_MS = 30 * 60 * 1000;
 const ADMIN_PAGE_SIZE = 20;
 const ADMIN_ACTIVITY_PAGE_SIZE = 10;
 const ADMIN_PURCHASE_KEY_PAGE_SIZE = 10;
@@ -205,8 +205,10 @@ const getReportsStorageKey = (userId?: string): string => getUserScopedStorageKe
 
 const getReportExpiry = (report: Partial<ScanReport>): number | undefined => {
   const expiry = report.expiresAt as unknown;
-  if (typeof expiry === 'number' && Number.isFinite(expiry)) return expiry;
-  if (expiry && typeof expiry === 'object') {
+  let storedExpiry: number | undefined;
+  if (typeof expiry === 'number' && Number.isFinite(expiry)) {
+    storedExpiry = expiry;
+  } else if (expiry && typeof expiry === 'object') {
     const timestamp = expiry as {
       toMillis?: () => number;
       seconds?: number;
@@ -214,14 +216,20 @@ const getReportExpiry = (report: Partial<ScanReport>): number | undefined => {
       nanoseconds?: number;
       _nanoseconds?: number;
     };
-    if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
-    const seconds = timestamp.seconds ?? timestamp._seconds;
-    if (typeof seconds === 'number') {
-      const nanoseconds = timestamp.nanoseconds ?? timestamp._nanoseconds ?? 0;
-      return seconds * 1000 + Math.floor(nanoseconds / 1_000_000);
+    if (typeof timestamp.toMillis === 'function') {
+      storedExpiry = timestamp.toMillis();
+    } else {
+      const seconds = timestamp.seconds ?? timestamp._seconds;
+      if (typeof seconds === 'number') {
+        const nanoseconds = timestamp.nanoseconds ?? timestamp._nanoseconds ?? 0;
+        storedExpiry = seconds * 1000 + Math.floor(nanoseconds / 1_000_000);
+      }
     }
   }
-  return typeof report.timestamp === 'number' ? report.timestamp + ONE_DAY_MS : undefined;
+
+  if (typeof report.timestamp !== 'number') return storedExpiry;
+  const ttlExpiry = report.timestamp + REPORT_TTL_MS;
+  return storedExpiry === undefined ? ttlExpiry : Math.min(storedExpiry, ttlExpiry);
 };
 
 const pruneExpiredReports = (items: ScanReport[] = [], userId?: string): ScanReport[] => {
@@ -239,7 +247,7 @@ const pruneExpiredReports = (items: ScanReport[] = [], userId?: string): ScanRep
     .map(item => ({
       ...item,
       userId: item.userId || userId,
-      expiresAt: getReportExpiry(item) ?? Date.now() + ONE_DAY_MS,
+      expiresAt: getReportExpiry(item) ?? Date.now() + REPORT_TTL_MS,
     }));
 };
 
@@ -330,7 +338,7 @@ const sanitizePersistedReports = (items: ScanReport[] = [], userId?: string): Sc
           ownerName: r.ownerName,
           institution: getInstitutionName(r.institution),
           userId: r.userId || userId,
-          expiresAt: getReportExpiry(r) ?? Date.now() + ONE_DAY_MS,
+          expiresAt: getReportExpiry(r) ?? Date.now() + REPORT_TTL_MS,
           submissionId: formatTurnitinSubmissionId(r.submissionId),
           contentSample: sample,
           snippets: (cleanedSnippets.length > 0 ? cleanedSnippets : []) as HighlightedSnippet[],
@@ -847,9 +855,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               name: fbUser.displayName || data.name || fbUser.email?.split('@')[0] || 'User',
               email: fbUser.email || data.email,
               role: (isUserAdmin ? 'admin' : 'client') as 'admin' | 'client',
-              credits: isUserAdmin ? 0 : (typeof data.credits === 'number' ? data.credits : 0),
-              usedCredits: isUserAdmin ? 0 : (typeof data.usedCredits === 'number' ? data.usedCredits : 0),
-              totalScans: isUserAdmin ? 0 : (typeof data.totalScans === 'number' ? data.totalScans : 0),
+              credits: isUserAdmin ? 0 : (typeof data.credits === 'number' ? data.credits : currentUser.credits),
+              usedCredits: isUserAdmin ? 0 : (typeof data.usedCredits === 'number' ? data.usedCredits : currentUser.usedCredits),
+              totalScans: isUserAdmin ? 0 : (typeof data.totalScans === 'number' ? data.totalScans : currentUser.totalScans),
               emailVerified: fbUser.emailVerified,
               photoURL: fbUser.photoURL || data.photoURL,
               authProvider: fbUser.providerData?.[0]?.providerId === 'google.com' ? 'google' : 'password',
@@ -1000,7 +1008,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ? data.expiresAt.toMillis()
               : undefined;
             const expiresAt = storedExpiry ?? (typeof data.timestamp === 'number'
-              ? data.timestamp + ONE_DAY_MS
+              ? data.timestamp + REPORT_TTL_MS
               : undefined);
 
             if (expiresAt !== undefined && expiresAt <= Date.now()) {
@@ -1196,7 +1204,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Firestore live listener attachment notice:', err);
     }
 
+    let unsubCurrentUserDocLocal: (() => void) | undefined;
+    try {
+      const currentUserDocRef = doc(db, 'users', firebaseUser.uid);
+      unsubCurrentUserDocLocal = onSnapshot(
+        currentUserDocRef,
+        (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          setCurrentUser((prev) => {
+            if (!prev || prev.id !== firebaseUser.uid) return prev;
+            const updated = { ...prev };
+            // Always trust Firestore as source of truth for credits
+            if (typeof data.credits === 'number') {
+              updated.credits = data.credits;
+            }
+            if (typeof data.usedCredits === 'number') updated.usedCredits = data.usedCredits;
+            if (typeof data.totalScans === 'number') updated.totalScans = data.totalScans;
+            if (typeof data.planExpiresAt === 'number') updated.planExpiresAt = data.planExpiresAt;
+            if (typeof data.planExpiry === 'string') updated.planExpiry = data.planExpiry;
+            if (typeof data.name === 'string') updated.name = data.name;
+            if (typeof data.role === 'string') updated.role = data.role as User['role'];
+            return updated;
+          });
+          setUsers((prev) =>
+            prev.map((u) => {
+              if (u.id !== firebaseUser.uid) return u;
+              const nextCredits = typeof data.credits === 'number' ? data.credits : u.credits;
+              return {
+                ...u,
+                credits: nextCredits,
+                usedCredits: typeof data.usedCredits === 'number' ? data.usedCredits : u.usedCredits,
+                totalScans: typeof data.totalScans === 'number' ? data.totalScans : u.totalScans,
+                planExpiresAt: typeof data.planExpiresAt === 'number' ? data.planExpiresAt : u.planExpiresAt,
+                planExpiry: typeof data.planExpiry === 'string' ? data.planExpiry : u.planExpiry,
+              };
+            })
+          );
+        },
+        (err) => {
+          console.warn('Live current user document subscription notice:', err.message);
+        }
+      );
+    } catch (e) {
+      console.warn('Failed to attach current user document listener:', e);
+    }
+
     return () => {
+      if (unsubCurrentUserDocLocal) unsubCurrentUserDocLocal();
       if (unsubUsers) unsubUsers();
       if (unsubCodes) unsubCodes();
       if (unsubTxns) unsubTxns();
@@ -1316,7 +1371,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       purchaseKeysCursorRef.current = snapshot.docs.length > 0
         ? snapshot.docs[snapshot.docs.length - 1]
         : null;
-      setPurchaseKeys(snapshot.docs.map(docSnap => mapPurchaseKey(docSnap)));
+      setPurchaseKeys(snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => mapPurchaseKey(docSnap)));
       setHasMorePurchaseKeys(snapshot.docs.length === ADMIN_PURCHASE_KEY_PAGE_SIZE);
       purchaseKeysLoadedRef.current = true;
     } catch (error) {
@@ -1344,10 +1399,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (snapshot.docs.length > 0) {
         purchaseKeysCursorRef.current = snapshot.docs[snapshot.docs.length - 1];
-        const nextKeys = snapshot.docs.map(docSnap => mapPurchaseKey(docSnap));
+        const nextKeys = snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => mapPurchaseKey(docSnap));
         setPurchaseKeys(previous => {
-          const byId = new Map(previous.map(key => [key.id, key]));
-          nextKeys.forEach(key => byId.set(key.id, key));
+          const byId = new Map(previous.map((key: PurchaseKey) => [key.id, key]));
+          nextKeys.forEach((key: PurchaseKey) => byId.set(key.id, key));
           return Array.from(byId.values()).sort((first, second) => second.createdAt.localeCompare(first.createdAt));
         });
       }
@@ -1378,7 +1433,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (usersSnap && !usersSnap.empty) {
           const fsUsers: User[] = [];
-          usersSnap.forEach((docSnap: any) => {
+          usersSnap.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => {
             const d = docSnap.data();
             if (d && (d.email || d.name) && !isRemovedUser(d)) {
               fsUsers.push({
@@ -1431,7 +1486,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (txnsSnap && !txnsSnap.empty) {
           const fsTxns: CreditTransaction[] = [];
-          txnsSnap.forEach((docSnap: any) => {
+          txnsSnap.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => {
             const d = docSnap.data();
             if (d && d.userId) {
               fsTxns.push(normalizeTransactionData(d, docSnap.id));
@@ -1506,10 +1561,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await setDoc(profileRef, newUser, { merge: true });
       }
       setActivePanel(newUser.role === 'admin' ? 'admin' : 'client');
-      setNotification({
-        message: `Welcome, ${newUser.name || newUser.email}! Signed in with Google.`,
-        type: 'success',
-      });
     } catch (err: unknown) {
       console.error('Google Sign-In error:', err);
       const errMsg = err instanceof Error ? err.message : 'Google authentication failed';
@@ -2342,15 +2393,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    if (currentUser.credits < cost) {
+    // Read fresh credits from Firestore to avoid stale UI state
+    let freshCredits = currentUser.credits;
+    try {
+      if (firebaseUser?.uid) {
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          const d = snap.data();
+          if (typeof d.credits === 'number') freshCredits = d.credits;
+          setCurrentUser(prev => ({ ...prev, credits: d.credits as number, usedCredits: typeof d.usedCredits === 'number' ? d.usedCredits : prev.usedCredits || 0, totalScans: typeof d.totalScans === 'number' ? d.totalScans : prev.totalScans || 0 }));
+        }
+      }
+    } catch {}
+
+    if ((freshCredits || 0) < cost) {
       return {
         success: false,
-        error: `Insufficient credits. This check requires ${cost} credits, but you have ${currentUser.credits}. Please contact your admin for more credits.`,
+        error: `Insufficient credits. This check requires ${cost} credits, but you have ${freshCredits || 0}. Please contact your admin for more credits.`,
       };
     }
 
     setIsScanning(true);
     setScanProgress({ step: 'Preparing document analysis...', percent: 15 });
+    let uploadedReportId: string | undefined;
+    let firestoreWarning: string | undefined;
 
     try {
       if (!auth.currentUser || auth.currentUser.uid !== firebaseUser?.uid) {
@@ -2484,10 +2551,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           aiScore = result.aiScore;
           aiAnnotations = result.annotations;
           // For AI reports only, randomly convert 75% of 0% results to *% threshold behavior
-          if (options.mode === 'ai' && aiScore === 0) {
-            if (Math.random() < 0.75) {
-              aiScore = Math.floor(Math.random() * 20) + 1;
-            }
+          if (options.mode === 'ai' && aiScore === 0 && Math.random() < 0.75) {
+            aiScore = Math.floor(Math.random() * 20) + 1;
           }
         } catch (err) {
           console.error('AI detection request failed:', err);
@@ -2500,7 +2565,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const reportId = `rep-${Date.now()}`;
-      const expiresAt = Date.now() + ONE_DAY_MS;
+      uploadedReportId = reportId;
+      const expiresAt = Date.now() + REPORT_TTL_MS;
       const storedFileSize = options.sourceFileSize ?? 0;
 
       const rawWords = sampleText.trim().split(/\s+/).filter(Boolean).length;
@@ -2625,15 +2691,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...persistedReport
       } = newReport;
 
+      // Firestore writes are non-fatal: if the server lacks credentials or the
+      // client cannot reach Firestore (permissions), fall back to localStorage so
+      // the user still gets their similarity report and download icon.
       const transactionRef = doc(collection(db, 'transactions'));
-      const reportRef = doc(db, 'reports', newReport.id);
       const transactionId = transactionRef.id;
       const transactionDate = formatPakistanDateTime(now);
-      const cleanedReportData = cleanFirestoreData({
-        ...persistedReport,
-        userId: firebaseUser.uid,
-        expiresAt: newReport.expiresAt,
-      });
 
       try {
         const balanceResult = await runTransaction(db, async transaction => {
@@ -2648,9 +2711,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             throw new Error('Your plan has expired. Redeem a new purchase key to continue scanning.');
           }
 
-          const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : 0;
-          const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : 0;
-          const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : 0;
+          const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : freshCredits;
+          const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : currentUser.usedCredits || 0;
+          const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : currentUser.totalScans || 0;
 
           if (rawDocCredits < cost) {
             throw new Error(`Insufficient credits. This check requires ${cost} credits, but you have ${rawDocCredits}.`);
@@ -2678,7 +2741,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
 
           transaction.set(transactionRef, txnPayload);
-          transaction.set(reportRef, cleanedReportData);
           return {
             balanceAfter,
             usedCredits,
@@ -2686,13 +2748,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             userName: currentUser.name || userData.name || 'User',
           };
         });
+
+        try {
+          const cleanedReportData = cleanFirestoreData({
+            ...persistedReport,
+            userId: firebaseUser.uid,
+            expiresAt: newReport.expiresAt,
+          });
+          await setDoc(doc(db, 'reports', newReport.id), cleanedReportData);
+        } catch (reportDocErr) {
+          console.warn('Notice while writing report to Firestore, proceeding with credit deduction:', reportDocErr);
+        }
+
         const newBal = balanceResult.balanceAfter;
-        setCurrentUser(prev => ({
-          ...prev,
-          credits: balanceResult.balanceAfter,
-          usedCredits: balanceResult.usedCredits,
-          totalScans: balanceResult.totalScans,
-        }));
+        setCurrentUser(prev => {
+          const updated = {
+            ...prev,
+            credits: balanceResult.balanceAfter,
+            usedCredits: balanceResult.usedCredits,
+            totalScans: balanceResult.totalScans,
+          };
+          try { localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updated)); } catch {}
+          console.log('CREDITS DEDUCTED:', balanceResult.balanceAfter);
+          return updated;
+        });
         setUsers(prev => prev.map(user => user.id === firebaseUser.uid ? {
           ...user,
           credits: balanceResult.balanceAfter,
@@ -2717,9 +2796,134 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
           localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([scanTxn, ...prevStored]));
         } catch {}
+
       } catch (firestoreErr) {
-        console.error('Atomic scan transaction failed:', firestoreErr);
-        throw firestoreErr;
+        console.error('Firestore write failed, applying local credit deduction fallback:', firestoreErr);
+        firestoreWarning = firestoreErr instanceof Error ? firestoreErr.message : String(firestoreErr);
+        const fallbackBal = Math.max(0, (typeof freshCredits === 'number' ? freshCredits : currentUser.credits) - cost);
+        const fallbackUsed = (typeof currentUser.usedCredits === 'number' ? currentUser.usedCredits : 0) + cost;
+        const fallbackScans = (typeof currentUser.totalScans === 'number' ? currentUser.totalScans : 0) + 1;
+
+        setCurrentUser(prev => {
+          const updated = { ...prev, credits: fallbackBal, usedCredits: fallbackUsed, totalScans: fallbackScans };
+          try { localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        setUsers(prev => prev.map(user => user.id === currentUser.id || user.id === firebaseUser.uid ? {
+          ...user,
+          credits: fallbackBal,
+          usedCredits: fallbackUsed,
+          totalScans: fallbackScans,
+        } : user));
+
+        const localScanTxn: CreditTransaction = {
+          id: transactionId,
+          userId: currentUser.id || firebaseUser.uid,
+          userName: currentUser.name,
+          amount: -cost,
+          balanceAfter: fallbackBal,
+          type: 'scan_deduction',
+          note: `Scanned document: ${options.fileName} (${modeNameMap[reportMode] || 'Both'})`,
+          date: transactionDate,
+          timestamp: now,
+        };
+        setTransactions(prev => [localScanTxn, ...prev]);
+        try {
+          const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
+          localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([localScanTxn, ...prevStored]));
+        } catch {}
+
+        // Try to sync to Firestore even in fallback so admin sees the deduction
+        try {
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          // Try transaction first
+          try {
+            await runTransaction(db, async transaction => {
+              const userSnapshot = await transaction.get(userRef);
+              if (!userSnapshot.exists()) return;
+              const userData = userSnapshot.data();
+              const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : fallbackBal + cost;
+              const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : fallbackUsed - cost;
+              const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : fallbackScans - 1;
+              if (rawDocCredits < cost) return;
+              transaction.set(userRef, {
+                credits: Math.max(0, rawDocCredits - cost),
+                usedCredits: rawDocUsed + cost,
+                totalScans: rawDocScans + 1,
+              }, { merge: true });
+              transaction.set(doc(db, 'transactions', transactionId), cleanFirestoreData({
+                id: transactionId,
+                userId: firebaseUser.uid,
+                userName: currentUser.name || userData.name || 'User',
+                amount: -cost,
+                balanceAfter: Math.max(0, rawDocCredits - cost),
+                type: 'scan_deduction',
+                note: localScanTxn.note,
+                date: transactionDate,
+                timestamp: now,
+              }));
+            });
+          } catch (txSyncErr) {
+            console.warn('Transaction sync failed, trying direct update:', txSyncErr);
+            // Direct update as fallback
+            try {
+              const snap = await getDoc(userRef);
+              if (snap.exists()) {
+                const ud = snap.data();
+                const rc = typeof ud.credits === 'number' ? ud.credits : fallbackBal + cost;
+                const ru = typeof ud.usedCredits === 'number' ? ud.usedCredits : fallbackUsed - cost;
+                const rs = typeof ud.totalScans === 'number' ? ud.totalScans : fallbackScans - 1;
+                if (rc >= cost) {
+                  await setDoc(userRef, {
+                    credits: rc - cost,
+                    usedCredits: ru + cost,
+                    totalScans: rs + 1,
+                  }, { merge: true });
+                }
+              }
+            } catch (directErr) {
+              console.warn('Direct update failed:', directErr);
+            }
+            // Always try to write transaction
+            try {
+              await setDoc(doc(db, 'transactions', transactionId), cleanFirestoreData({
+                id: transactionId,
+                userId: firebaseUser.uid,
+                userName: currentUser.name,
+                amount: -cost,
+                balanceAfter: fallbackBal,
+                type: 'scan_deduction',
+                note: localScanTxn.note,
+                date: transactionDate,
+                timestamp: now,
+              }));
+            } catch (txnDirectErr) {
+              console.warn('Direct transaction write failed:', txnDirectErr);
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Could not sync scan deduction to Firestore in fallback:', syncErr);
+        }
+
+        try {
+          await setDoc(doc(db, 'reports', newReport.id), cleanFirestoreData({
+            ...persistedReport,
+            userId: firebaseUser.uid,
+            expiresAt: newReport.expiresAt,
+          }));
+        } catch (reportSyncErr) {
+          console.warn('Could not sync report to Firestore in fallback:', reportSyncErr);
+        }
+
+        const storageKey = getReportsStorageKey(currentUser.id);
+        const saved = localStorage.getItem(storageKey);
+        let items: ScanReport[] = [];
+        if (saved) {
+          try { items = JSON.parse(saved); } catch {}
+        }
+        items = pruneExpiredReports([newReport, ...items.filter(r => r.id !== newReport.id)], currentUser.id);
+        try { localStorage.setItem(storageKey, JSON.stringify(items)); } catch {}
+        setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
       }
 
       setScanProgress({ step: 'Finalizing report and rendering document...', percent: 100 });
@@ -2728,19 +2932,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setScanProgress(null);
       }, 300);
 
-      setNotification(aiDetectionError
-        ? {
-            message: `AI detection failed: ${aiDetectionError} Similarity report generated successfully (-${cost} credit).`,
-            type: 'error',
-          }
-        : {
-            message: `Scan finished! Report generated successfully (-${cost} credit).`,
-            type: 'success',
-          });
+      const scanWarnings = [
+        aiDetectionError
+          ? `AI detection failed: ${aiDetectionError} Similarity report generated successfully (-${cost} credit).`
+          : undefined,
+        firestoreWarning
+          ? `Account sync failed; changes are saved only in this browser: ${firestoreWarning}`
+          : undefined,
+      ].filter((warning): warning is string => Boolean(warning));
+      setNotification(scanWarnings.length > 0
+        ? { message: scanWarnings.join(' '), type: 'error' }
+        : { message: `Scan finished! Report generated successfully (-${cost} credit).`, type: 'success' });
 
       return { success: true, report: newReport };
     } catch (error) {
       console.error('Scan failed:', error);
+      const cleanup: Promise<unknown>[] = [];
+      if (uploadedReportId) cleanup.push(deleteDoc(doc(db, 'reports', uploadedReportId)));
+      await Promise.allSettled(cleanup);
       setIsScanning(false);
       setScanProgress(null);
       setNotification({
@@ -2754,6 +2963,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteReport = async (reportId: string) => {
     const reportToDelete = reports.find(report => report.id === reportId);
     setReports(prev => prev.filter(r => r.id !== reportId));
+    // DO NOT restore credits on report deletion
     await deleteReportFile(reportId).catch(error => {
       console.warn('Could not remove the original document from IndexedDB:', error);
     });

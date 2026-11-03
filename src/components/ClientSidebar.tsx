@@ -25,23 +25,23 @@ export const ClientSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`bg-[#0d1526] border-b md:border-b-0 md:border-r border-white/[0.06] flex flex-col justify-start shrink-0 select-none md:sticky md:top-0 transition-all duration-200 z-20 w-full md:min-h-screen ${
+      className={`sticky top-0 z-40 flex w-full shrink-0 select-none flex-col justify-start border-b border-white/[0.06] bg-[#0d1526] pt-[env(safe-area-inset-top)] transition-all duration-200 md:static md:z-20 md:min-h-screen md:border-b-0 md:border-r ${
         isSidebarOpen ? 'md:w-64' : 'md:w-[72px]'
       }`}
       id="client-sidebar"
     >
       {/* Logo & Toggle */}
       <div
-        className={`border-b border-white/[0.06] flex items-center transition-all duration-200 ${
-          isSidebarOpen ? 'px-4 py-4 justify-between gap-2' : 'px-3 py-4 flex-col gap-3 justify-center'
+        className={`flex items-center border-b border-white/[0.06] transition-all duration-200 ${
+          isSidebarOpen ? 'justify-between gap-2 px-4 py-2.5 md:py-4' : 'flex-col justify-center gap-3 px-3 py-4'
         }`}
       >
         {isSidebarOpen ? (
           <>
-            <OriginalityCheckLogo size="sm" showSubtitle={true} subtitle="Academic Integrity" variant="dark" />
+            <OriginalityCheckLogo size="sm" showSubtitle={false} variant="dark" />
             <button
               onClick={toggleSidebar}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.07] transition shrink-0"
+              className="hidden shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.07] hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 md:block"
               title="Collapse sidebar"
               id="btn-sidebar-toggle-close"
               aria-label="Collapse sidebar"
@@ -54,7 +54,7 @@ export const ClientSidebar: React.FC = () => {
             <OriginalityCheckLogo size="sm" iconOnly={true} variant="dark" />
             <button
               onClick={toggleSidebar}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition"
+              className="rounded-lg p-2 text-slate-500 transition hover:bg-indigo-500/10 hover:text-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
               title="Expand sidebar"
               id="btn-sidebar-toggle-open"
               aria-label="Expand sidebar"
@@ -67,8 +67,9 @@ export const ClientSidebar: React.FC = () => {
 
       {/* Navigation */}
       <nav
-        className={`flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible scrollbar-hide transition-all duration-200 ${
-          isSidebarOpen ? 'p-3' : 'p-2'
+        aria-label="Main navigation"
+        className={`grid grid-cols-3 gap-1 transition-all duration-200 md:flex md:flex-col md:overflow-visible ${
+          isSidebarOpen ? 'px-2 py-2 md:p-3' : 'p-2'
         }`}
         id="sidebar-nav"
       >
@@ -81,8 +82,10 @@ export const ClientSidebar: React.FC = () => {
               id={`nav-${item.id}`}
               onClick={() => setActiveTab(item.id)}
               title={!isSidebarOpen ? item.label : undefined}
-              className={`w-full flex items-center rounded-xl text-sm font-semibold transition-all duration-150 ${
-                isSidebarOpen ? 'gap-3 px-3.5 py-2.5' : 'justify-center p-2.5'
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={item.label}
+              className={`flex min-h-12 min-w-0 items-center justify-center rounded-xl text-[10px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 md:min-h-11 md:justify-start md:text-sm ${
+                isSidebarOpen ? 'flex-col gap-1 px-1.5 py-1.5 md:flex-row md:gap-3 md:px-3.5 md:py-2.5' : 'md:justify-center md:p-2.5'
               } ${
                 isActive
                   ? 'bg-indigo-600/20 text-indigo-300 ring-1 ring-indigo-500/30'
@@ -90,13 +93,19 @@ export const ClientSidebar: React.FC = () => {
               }`}
             >
               <Icon
-                className={`w-[18px] h-[18px] shrink-0 ${
+                aria-hidden="true"
+                className={`h-[18px] w-[18px] shrink-0 ${
                   isActive ? 'text-indigo-400' : 'text-slate-500'
                 }`}
               />
-              {isSidebarOpen && <span>{item.label}</span>}
+              {isSidebarOpen && (
+                <span className="max-w-full truncate text-center md:text-left">
+                  <span className="md:hidden">{item.id === 'redeem' ? 'Redeem' : item.label}</span>
+                  <span className="hidden md:inline">{item.label}</span>
+                </span>
+              )}
               {isSidebarOpen && isActive && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                <span className="hidden h-1.5 w-1.5 rounded-full bg-indigo-400 md:ml-auto md:block" />
               )}
             </button>
           );

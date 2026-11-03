@@ -13,7 +13,7 @@ export const OriginalityCheckLogo: React.FC<OriginalityCheckLogoProps> = ({
   size = 'md',
   variant = 'light',
   showSubtitle = true,
-  subtitle = 'Academic Integrity',
+  subtitle = '',
   iconOnly = false,
   className = '',
 }) => {
@@ -21,33 +21,31 @@ export const OriginalityCheckLogo: React.FC<OriginalityCheckLogoProps> = ({
 
   // Dimension scaling
   const dimensions = {
-    sm: { height: 28, iconSize: 28, titleSize: 'text-base', subSize: 'text-[8px]' },
-    md: { height: 36, iconSize: 36, titleSize: 'text-lg', subSize: 'text-[9px]' },
-    lg: { height: 52, iconSize: 52, titleSize: 'text-2xl', subSize: 'text-[11px]' },
-    xl: { height: 64, iconSize: 64, titleSize: 'text-3xl', subSize: 'text-[13px]' },
+    sm: { iconSize: 28, titleSize: 'text-[15px]', subSize: 'text-[8px]' },
+    md: { iconSize: 32, titleSize: 'text-lg', subSize: 'text-[9px]' },
+    lg: { iconSize: 40, titleSize: 'text-2xl', subSize: 'text-[11px]' },
+    xl: { iconSize: 48, titleSize: 'text-3xl', subSize: 'text-[13px]' },
   }[size];
 
   return (
-    <div className={`inline-flex items-center gap-3 select-none ${className}`} id="originality-check-logo">
-      {/* SVG Icon: Graduation Cap + Pixelated Bits + Checked Document */}
-      <svg
-        viewBox="0 0 160 160"
-        className="shrink-0"
-        style={{ width: dimensions.iconSize, height: dimensions.iconSize }}
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#0080ff" />
-            <stop offset="100%" stopColor="#0052cc" />
-          </linearGradient>
-          <linearGradient id="cyanGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#00b4d8" />
-            <stop offset="100%" stopColor="#0077b6" />
-          </linearGradient>
-        </defs>
-
+    <div
+      className={`inline-flex min-w-0 select-none items-center gap-2.5 ${className}`}
+      role="img"
+      aria-label="Originality Check"
+    >
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border shadow-sm ${
+        isDark
+          ? 'border-white/10 bg-gradient-to-br from-slate-800 to-slate-900'
+          : 'border-indigo-100 bg-gradient-to-br from-indigo-50 to-sky-100'
+      }`}>
+        <svg
+          viewBox="0 0 160 160"
+          className="shrink-0"
+          aria-hidden="true"
+          style={{ width: dimensions.iconSize, height: dimensions.iconSize }}
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
         {/* Pixel / Data Cubes on Left */}
         <rect x="18" y="70" width="10" height="10" rx="1.5" fill="#00a8ff" />
         <rect x="32" y="70" width="10" height="10" rx="1.5" fill="#0066ff" />
@@ -143,19 +141,20 @@ export const OriginalityCheckLogo: React.FC<OriginalityCheckLogoProps> = ({
           />
           <rect x="35" y="53" width="3" height="7" rx="1" fill={isDark ? '#cbd5e1' : '#0c1e36'} />
         </g>
-      </svg>
+        </svg>
+      </span>
 
       {/* Brand Text Block: "Originality Check" + Subtitle */}
       {!iconOnly && (
-        <div className="flex flex-col justify-center min-w-0">
-          <div className={`font-extrabold tracking-tight leading-none ${dimensions.titleSize} flex flex-col`}>
-            <span className={isDark ? 'text-white' : 'text-[#0c2340]'}>Originality</span>
-            <span className="text-[#0066ff]">Check</span>
+        <div className="flex min-w-0 flex-col justify-center">
+          <div className={`flex items-baseline gap-1 whitespace-nowrap font-extrabold leading-none tracking-[-0.045em] ${dimensions.titleSize}`}>
+            <span className={isDark ? 'text-white' : 'text-slate-900'}>Originality</span>
+            <span className="bg-gradient-to-r from-indigo-600 to-sky-500 bg-clip-text text-transparent">Check</span>
           </div>
 
-          {showSubtitle && (
+          {showSubtitle && subtitle && (
             <div
-              className={`font-semibold tracking-wider uppercase mt-1 ${dimensions.subSize} ${
+              className={`mt-1 whitespace-nowrap font-semibold tracking-[0.08em] uppercase ${dimensions.subSize} ${
                 isDark ? 'text-slate-400' : 'text-slate-400'
               }`}
             >

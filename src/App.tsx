@@ -11,7 +11,6 @@ import { ProfileEditModal } from './components/ProfileEditModal';
 import { AuthGate } from './components/AuthGate';
 import { OriginalityCheckLogo } from './components/OriginalityCheckLogo';
 import { ToastNotificationBanner } from './components/ToastNotificationBanner';
-import { ScanReport } from './types';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -103,6 +102,11 @@ const AppContent: React.FC = () => {
     };
   }, [firebaseUser?.uid, isScanning]);
 
+  useEffect(() => {
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    window.scrollTo({ top: 0, behavior });
+  }, [activeTab]);
+
   const getPageInfo = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -164,7 +168,7 @@ const AppContent: React.FC = () => {
       {isAdmin ? (
         <AdminPanel />
       ) : (
-        <div className="min-h-screen bg-[#f8fafc] flex flex-col md:flex-row relative font-['Plus_Jakarta_Sans',sans-serif] overflow-x-hidden" id="app-client-root">
+        <div className="relative flex min-h-screen flex-col bg-[#f8fafc] font-['Plus_Jakarta_Sans',sans-serif] md:flex-row" id="app-client-root">
           {/* Client Left Sidebar */}
           <ClientSidebar />
 
@@ -174,12 +178,12 @@ const AppContent: React.FC = () => {
             <ClientHeader title={pageInfo.title} iconSuffix={pageInfo.iconSuffix} />
 
             {/* View Content */}
-            <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
+            <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-8">
               {activeTab === 'dashboard' && (
                 <DashboardView />
               )}
               {activeTab === 'reports' && (
-                <ReportsView onOpenReport={(rep: ScanReport) => setSelectedReport(rep)} />
+                <ReportsView />
               )}
               {activeTab === 'redeem' && <RedeemCodeView />}
             </main>
@@ -201,12 +205,12 @@ const AppContent: React.FC = () => {
       {/* Scan Processing Modal Animation */}
       <ScanProgressModal />
 
-      {/* Toast Notification Banner with Auto-Diminish after 5s */}
+      {/* Keep errors visible longer so users have time to read them. */}
       {notification && (
         <ToastNotificationBanner
           notification={notification}
           onDismiss={() => setNotification(null)}
-          durationSeconds={5}
+          durationSeconds={notification.type === 'error' ? 10 : 5}
         />
       )}
     </>
