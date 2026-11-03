@@ -2351,7 +2351,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setIsScanning(true);
     setScanProgress({ step: 'Preparing document analysis...', percent: 15 });
-    let uploadedReportId: string | undefined;
 
     try {
       if (!auth.currentUser || auth.currentUser.uid !== firebaseUser?.uid) {
@@ -2501,7 +2500,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const reportId = `rep-${Date.now()}`;
-      uploadedReportId = reportId;
       const expiresAt = Date.now() + ONE_DAY_MS;
       const storedFileSize = options.sourceFileSize ?? 0;
 
@@ -2627,13 +2625,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...persistedReport
       } = newReport;
 
-      // Firestore writes are non-fatal: if the server lacks credentials or the
-      // client cannot reach Firestore (permissions), fall back to localStorage so
-      // the user still gets their similarity report and download icon.
-      let firestoreOk = false;
       const transactionRef = doc(collection(db, 'transactions'));
+      const reportRef = doc(db, 'reports', newReport.id);
       const transactionId = transactionRef.id;
       const transactionDate = formatPakistanDateTime(now);
+      const cleanedReportData = cleanFirestoreData({
+        ...persistedReport,
+        userId: firebaseUser.uid,
+        expiresAt: newReport.expiresAt,
+      });
 
       try {
         const balanceResult = await runTransaction(db, async transaction => {
@@ -2678,6 +2678,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
 
           transaction.set(transactionRef, txnPayload);
+          transaction.set(reportRef, cleanedReportData);
           return {
             balanceAfter,
             usedCredits,
@@ -2685,18 +2686,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             userName: currentUser.name || userData.name || 'User',
           };
         });
-
-        try {
-          const cleanedReportData = cleanFirestoreData({
-            ...persistedReport,
-            userId: firebaseUser.uid,
-            expiresAt: newReport.expiresAt,
-          });
-          await setDoc(doc(db, 'reports', newReport.id), cleanedReportData);
-        } catch (reportDocErr) {
-          console.warn('Notice while writing report to Firestore, proceeding with credit deduction:', reportDocErr);
-        }
-
         const newBal = balanceResult.balanceAfter;
         setCurrentUser(prev => ({
           ...prev,
@@ -2728,135 +2717,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
           localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([scanTxn, ...prevStored]));
         } catch {}
-
-        firestoreOk = true;
       } catch (firestoreErr) {
-        console.error('Firestore write failed, applying local credit deduction fallback:', firestoreErr);
-        const fallbackBal = Math.max(0, (typeof currentUser.credits === 'number' ? currentUser.credits : 0) - cost);
-        const fallbackUsed = (typeof currentUser.usedCredits === 'number' ? currentUser.usedCredits : 0) + cost;
-        const fallbackScans = (typeof currentUser.totalScans === 'number' ? currentUser.totalScans : 0) + 1;
-
-        setCurrentUser(prev => ({
-          ...prev,
-          credits: fallbackBal,
-          usedCredits: fallbackUsed,
-          totalScans: fallbackScans,
-        }));
-        setUsers(prev => prev.map(user => user.id === currentUser.id || user.id === firebaseUser.uid ? {
-          ...user,
-          credits: fallbackBal,
-          usedCredits: fallbackUsed,
-          totalScans: fallbackScans,
-        } : user));
-
-        const localScanTxn: CreditTransaction = {
-          id: transactionId,
-          userId: currentUser.id || firebaseUser.uid,
-          userName: currentUser.name,
-          amount: -cost,
-          balanceAfter: fallbackBal,
-          type: 'scan_deduction',
-          note: `Scanned document: ${options.fileName} (${modeNameMap[reportMode] || 'Both'})`,
-          date: transactionDate,
-          timestamp: now,
-        };
-        setTransactions(prev => [localScanTxn, ...prev]);
-        try {
-          const prevStored = JSON.parse(localStorage.getItem(STORAGE_KEY_TXNS) || '[]');
-          localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify([localScanTxn, ...prevStored]));
-        } catch {}
-
-        // Try to sync to Firestore even in fallback so admin sees the deduction
-        try {
-          const userRef = doc(db, 'users', firebaseUser.uid);
-          // Try transaction first
-          try {
-            await runTransaction(db, async transaction => {
-              const userSnapshot = await transaction.get(userRef);
-              if (!userSnapshot.exists()) return;
-              const userData = userSnapshot.data();
-              const rawDocCredits = typeof userData.credits === 'number' ? userData.credits : fallbackBal + cost;
-              const rawDocUsed = typeof userData.usedCredits === 'number' ? userData.usedCredits : fallbackUsed - cost;
-              const rawDocScans = typeof userData.totalScans === 'number' ? userData.totalScans : fallbackScans - 1;
-              if (rawDocCredits < cost) return;
-              transaction.set(userRef, {
-                credits: Math.max(0, rawDocCredits - cost),
-                usedCredits: rawDocUsed + cost,
-                totalScans: rawDocScans + 1,
-              }, { merge: true });
-              transaction.set(doc(db, 'transactions', transactionId), cleanFirestoreData({
-                id: transactionId,
-                userId: firebaseUser.uid,
-                userName: currentUser.name || userData.name || 'User',
-                amount: -cost,
-                balanceAfter: Math.max(0, rawDocCredits - cost),
-                type: 'scan_deduction',
-                note: localScanTxn.note,
-                date: transactionDate,
-                timestamp: now,
-              }));
-            });
-          } catch (txSyncErr) {
-            console.warn('Transaction sync failed, trying direct update:', txSyncErr);
-            // Direct update as fallback
-            try {
-              const snap = await getDoc(userRef);
-              if (snap.exists()) {
-                const ud = snap.data();
-                const rc = typeof ud.credits === 'number' ? ud.credits : fallbackBal + cost;
-                const ru = typeof ud.usedCredits === 'number' ? ud.usedCredits : fallbackUsed - cost;
-                const rs = typeof ud.totalScans === 'number' ? ud.totalScans : fallbackScans - 1;
-                if (rc >= cost) {
-                  await setDoc(userRef, {
-                    credits: rc - cost,
-                    usedCredits: ru + cost,
-                    totalScans: rs + 1,
-                  }, { merge: true });
-                }
-              }
-            } catch (directErr) {
-              console.warn('Direct update failed:', directErr);
-            }
-            // Always try to write transaction
-            try {
-              await setDoc(doc(db, 'transactions', transactionId), cleanFirestoreData({
-                id: transactionId,
-                userId: firebaseUser.uid,
-                userName: currentUser.name,
-                amount: -cost,
-                balanceAfter: fallbackBal,
-                type: 'scan_deduction',
-                note: localScanTxn.note,
-                date: transactionDate,
-                timestamp: now,
-              }));
-            } catch (txnDirectErr) {
-              console.warn('Direct transaction write failed:', txnDirectErr);
-            }
-          }
-        } catch (syncErr) {
-          console.warn('Could not sync scan deduction to Firestore in fallback:', syncErr);
-        }
-
-        try {
-          await setDoc(doc(db, 'reports', newReport.id), cleanFirestoreData({
-            ...persistedReport,
-            userId: firebaseUser.uid,
-            expiresAt: newReport.expiresAt,
-          }));
-        } catch (reportSyncErr) {
-          console.warn('Could not sync report to Firestore in fallback:', reportSyncErr);
-        }
-
-        const storageKey = getReportsStorageKey(currentUser.id);
-        const saved = localStorage.getItem(storageKey);
-        let items: ScanReport[] = [];
-        if (saved) {
-          try { items = JSON.parse(saved); } catch {}
-        }
-        items = pruneExpiredReports([newReport, ...items.filter(r => r.id !== newReport.id)], currentUser.id);
-        try { localStorage.setItem(storageKey, JSON.stringify(items)); } catch {}
-        setReports(prev => pruneExpiredReports([newReport, ...prev.filter(report => report.id !== newReport.id)], currentUser.id));
+        console.error('Atomic scan transaction failed:', firestoreErr);
+        throw firestoreErr;
       }
 
       setScanProgress({ step: 'Finalizing report and rendering document...', percent: 100 });
@@ -2878,9 +2741,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true, report: newReport };
     } catch (error) {
       console.error('Scan failed:', error);
-      const cleanup: Promise<unknown>[] = [];
-      if (uploadedReportId) cleanup.push(deleteDoc(doc(db, 'reports', uploadedReportId)));
-      await Promise.allSettled(cleanup);
       setIsScanning(false);
       setScanProgress(null);
       setNotification({
