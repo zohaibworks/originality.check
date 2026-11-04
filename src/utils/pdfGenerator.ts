@@ -140,11 +140,38 @@ async function renderSvgToPng(svgString: string, width = 200, height = 200): Pro
 
 let cachedLogoPng: string | null = null;
 let cachedClassStickerPng: string | null = null;
+let cachedAiReportLogoPng: string | null = null;
 
 async function getTurnitinLogoPng(): Promise<string> {
   if (cachedLogoPng) return cachedLogoPng;
   cachedLogoPng = await renderSvgToPng(TURNITIN_SVG_RAW, 1430, 400);
   return cachedLogoPng;
+}
+
+async function getAiReportLogoPng(): Promise<string> {
+  if (cachedAiReportLogoPng) return cachedAiReportLogoPng;
+
+  const response = await fetch('/ai-report-logo.png');
+  if (!response.ok) {
+    throw new Error(`Could not load the AI report logo (${response.status}).`);
+  }
+
+  const logoBlob = await response.blob();
+  const logoDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Could not read the AI report logo.'));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the AI report logo.'));
+    reader.readAsDataURL(logoBlob);
+  });
+
+  cachedAiReportLogoPng = logoDataUrl;
+  return logoDataUrl;
 }
 
 async function getClassStickerPng(): Promise<string> {
@@ -1916,11 +1943,11 @@ export function drawUniversalManuscriptPdfPage(
       doc.text(pLines, textLeft, textY);
     } else if (hasAiSegment) {
       // AI highlight
-      doc.setFillColor(180, 215, 254);
+      doc.setFillColor(165, 243, 252);
       doc.rect(textLeft - 2, textY - 8, textWidth + 4, pHeight, 'F');
 
       // AI Badge in gutter
-      doc.setFillColor(2, 132, 199);
+      doc.setFillColor(8, 145, 178);
       doc.roundedRect(margin + 1, textY - 6, 8, 8, 1.5, 1.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(4.5);
@@ -1929,7 +1956,7 @@ export function drawUniversalManuscriptPdfPage(
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(30, 64, 175);
+      doc.setTextColor(21, 94, 117);
       doc.text(pLines, textLeft, textY);
     } else {
       // Normal text
@@ -2342,10 +2369,7 @@ export async function downloadClassicReportPdf(
   const authorName = report.classicAuthor?.trim() || report.author?.trim() || 'Author';
   const resolvedOwner = ownerName?.trim() || report.ownerName?.trim() || 'Kunal Kumar';
   const sources = report.sources || [];
-  const baseName = (report.fileName || report.title || 'Classic_Report')
-    .replace(/\.[^/.]+$/, '')
-    .replace(/[\\/:*?"<>|]/g, '_')
-    .trim() || 'Classic_Report';
+  const outputFileName = getReportPdfFileName(report);
 
   // If authentic PDF from LibreOffice conversion is available, merge with Classic Cover & Summary pages
   if (report.fileData) {
@@ -2494,7 +2518,7 @@ export async function downloadClassicReportPdf(
       finalPdfDoc.addPage(copiedSummary);
 
       const finalPdfBytes = await finalPdfDoc.save();
-      downloadPdfFromBytes(finalPdfBytes, `${baseName}- plag report.pdf`);
+      downloadPdfFromBytes(finalPdfBytes, outputFileName);
       onProgress?.(finalPdfDoc.getPageCount(), finalPdfDoc.getPageCount());
       return;
     } catch (mergeErr) {
@@ -2574,7 +2598,7 @@ export async function downloadClassicReportPdf(
   drawClassicSummaryPage(pdf, report, authorName, sources, width);
 
   onProgress?.(totalPages, totalPages);
-  pdf.save(`${baseName}- plag report.pdf`);
+  pdf.save(outputFileName);
 }
 
 /**
@@ -2610,6 +2634,7 @@ export async function downloadReportPdf(
     gradCapPng,
     institutionNamePng,
     cautionPng,
+    aiReportLogoPng,
     globePng,
     bookPng,
     studentPng,
@@ -2623,6 +2648,7 @@ export async function downloadReportPdf(
     renderSvgToPng(GRAD_CAP_SVG, 120, 120),
     renderSvgToPng(INSTITUTION_NAME_SVG, 1120, 80),
     renderSvgToPng(CAUTION_SVG, 120, 120),
+    mode === 'ai' ? getAiReportLogoPng() : Promise.resolve(''),
     renderSvgToPng(GLOBE_SVG, 60, 60),
     renderSvgToPng(BOOK_SVG, 60, 60),
     renderSvgToPng(STUDENT_SVG, 60, 60),
@@ -2951,16 +2977,9 @@ export async function downloadReportPdf(
       .map(snippet => snippet.text);
     if ((report.aiScore > 0 || aiAnnotations.length > 0) && !isBelowThreshold) {
       y += 17;
-      doc.setFillColor(6, 182, 212);
-      doc.circle(margin + 6, y - 2, 6, 'F');
-      doc.setDrawColor(255, 255, 255);
-      doc.setFillColor(255, 255, 255);
-      doc.setLineWidth(0.7);
-      doc.line(margin + 6, y - 4.5, margin + 6, y - 6);
-      doc.circle(margin + 6, y - 6.5, 0.5, 'F');
-      doc.roundedRect(margin + 2.5, y - 4.5, 7, 5, 1, 1, 'S');
-      doc.circle(margin + 4.5, y - 2, 0.45, 'F');
-      doc.circle(margin + 7.5, y - 2, 0.45, 'F');
+      if (aiReportLogoPng) {
+        doc.addImage(aiReportLogoPng, 'PNG', margin, y - 6, 13.1, 12);
+      }
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.2);
       doc.setTextColor(0, 0, 0);
@@ -2974,13 +2993,13 @@ export async function downloadReportPdf(
       const aiGeneratedLabel = annotationCount > 0
         ? `${annotationCount} AI-generated ${labelScoreStr}` 
         : `AI-generated ${labelScoreStr}`;
-      doc.text(aiGeneratedLabel, margin + 18, y);
+      doc.text(aiGeneratedLabel, margin + 16, y);
 
       y += 9;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.8);
       doc.setTextColor(71, 85, 105);
-      doc.text('Likely generated or likely generated and revised by AI.', margin + 18, y);
+      doc.text('Likely generated or likely generated and revised by AI.', margin + 16, y);
 
       y += 9;
       doc.setDrawColor(226, 232, 240);
@@ -3184,7 +3203,7 @@ export async function downloadReportPdf(
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = getReportPdfFileName(report, mode);
+        a.download = getReportPdfFileName(report);
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
@@ -3375,7 +3394,7 @@ export async function downloadReportPdf(
     }
   }
 
-  const filename = getReportPdfFileName(report, mode);
+  const filename = getReportPdfFileName(report);
   doc.save(filename);
 }
 

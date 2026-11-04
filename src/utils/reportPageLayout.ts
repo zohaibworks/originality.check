@@ -101,14 +101,18 @@ export function getReportPageLayout(
   }
 }
 
-export function getReportPdfFileName(report: ScanReport, mode: 'ai' | 'similarity'): string {
-  const rawBase = (report.fileName || report.title || 'Turnitin_Report')
-    .replace(/\.[^/.]+$/, '')
-    .trim();
+export function getReportPdfFileName(
+  report: Pick<ScanReport, 'fileName' | 'title'>
+): string {
+  const uploadedName = (report.fileName || report.title || 'Turnitin Report')
+    .split(/[\\/]/)
+    .pop() || 'Turnitin Report';
+  const baseName = uploadedName
+    .replace(/\.[^.]+$/, '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '') || 'Turnitin Report';
 
-  if (mode === 'similarity') {
-    return `${rawBase}- plag report.pdf`;
-  } else {
-    return `${rawBase}- ai report.pdf`;
-  }
+  return `${baseName}.pdf`;
 }

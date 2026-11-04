@@ -92,13 +92,13 @@ export const SIMILARITY_THEMES: Record<number, HighlightColorTheme> = {
 
 /**
  * AI Writing highlight theme:
- * Distinct light-blue wash.
+ * Turquoise-cyan highlight for AI-detected text.
  */
 export const AI_THEME: HighlightColorTheme = {
-  bg: 'rgba(147, 197, 253, 0.70)', // prominent light blue wash
-  pdfColor: { r: 0.58, g: 0.78, b: 0.98 },
-  badgeBg: '#3b82f6',
-  textColor: '#1e40af',
+  bg: 'rgba(103, 232, 249, 0.62)',
+  pdfColor: { r: 0.40, g: 0.88, b: 0.93 },
+  badgeBg: '#0891b2',
+  textColor: '#155e75',
   isUnderlined: false,
 };
 

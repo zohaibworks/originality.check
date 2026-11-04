@@ -76,6 +76,37 @@ function getProviderErrorMessage(responseBody: string): string | undefined {
   }
 }
 
+export function getAiProviderFailure(error: unknown): { status: number; message: string } {
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return {
+      status: 504,
+      message: "AI detection provider timed out. Please try again. No score was generated.",
+    };
+  }
+
+  if (error instanceof SyntaxError) {
+    return {
+      status: 502,
+      message: "AI detection provider returned an unreadable response. No score was generated.",
+    };
+  }
+
+  if (
+    error instanceof TypeError &&
+    /fetch|network|socket|connect|dns/i.test(error.message)
+  ) {
+    return {
+      status: 502,
+      message: "Could not connect to the AI detection provider. Check the server's outbound network and try again. No score was generated.",
+    };
+  }
+
+  return {
+    status: 502,
+    message: "AI detection provider request failed unexpectedly. Please try again. No score was generated.",
+  };
+}
+
 export async function analyzeTextWithAiOrNot(
   authorization: string | undefined,
   text: unknown
@@ -214,9 +245,10 @@ export async function analyzeTextWithAiOrNot(
     };
   } catch (error) {
     console.error("AI or Not request failed:", error);
+    const failure = getAiProviderFailure(error);
     return {
-      status: 502,
-      body: { error: "Could not complete AI detection with the provider. No score was generated." },
+      status: failure.status,
+      body: { error: failure.message },
     };
   }
 }
