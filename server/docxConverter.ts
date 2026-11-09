@@ -268,9 +268,6 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
         '--headless',
         '--nologo',
         '--norestore',
-        '--invisible',
-        '--nofirststartwizard',
-        '--view',
         `-env:UserInstallation=${userInstallation}`,
         '--convert-to',
         exportFilter,
@@ -281,30 +278,23 @@ export async function convertDocxToPdf(docxBase64: string, originalFileName = 'd
 
       try {
         if (process.platform !== 'win32') {
-          const env: NodeJS.ProcessEnv = { ...process.env, HOME: '/tmp', SAL_USE_VCLPLUGIN: 'svp' };
-          if (!env.DISPLAY) env.DISPLAY = ':99';
-          // Try direct first (Xvfb started in container)
-          try {
-            const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env });
-            lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
-          } catch (e: any) {
-            lastConversionDiagnostic = `${e?.stdout || ''} ${e?.stderr || ''} ${e?.message || ''}`.trim();
-            // try with xvfb-run if direct fails
-            if (fs.existsSync('/usr/bin/xvfb-run')) {
-              try {
-                const xvfbArgs = ['-a', '--server-args=-screen 0 1280x1024x24', libreOfficeBin, ...args];
-                const result = await execFileAsync('xvfb-run', xvfbArgs, { timeout: 180000, maxBuffer: 30 * 1024 * 1024, env });
-                lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
-              } catch (e2: any) {
-                lastConversionDiagnostic = `${e2?.stdout || ''} ${e2?.stderr || ''} ${e2?.message || ''}`.trim();
-                throw e2;
-              }
-            } else {
-              throw e;
-            }
-          }
+          // On Linux (Railway/Cloud Run): run LibreOffice headless directly.
+          // SAL_USE_VCLPLUGIN=svp enables the headless VCL plugin that works
+          // without a display server — no xvfb-run needed or wanted.
+          const env: NodeJS.ProcessEnv = {
+            ...process.env,
+            HOME: '/tmp',
+            SAL_USE_VCLPLUGIN: 'svp',
+            DISPLAY: '',          // explicitly unset to prevent LibreOffice trying X11
+          };
+          const result = await execFileAsync(libreOfficeBin, args, {
+            timeout: 180_000,
+            maxBuffer: 30 * 1024 * 1024,
+            env,
+          });
+          lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
         } else {
-          const result = await execFileAsync(libreOfficeBin, args, { timeout: 180000, maxBuffer: 30 * 1024 * 1024 });
+          const result = await execFileAsync(libreOfficeBin, args, { timeout: 180_000, maxBuffer: 30 * 1024 * 1024 });
           lastConversionDiagnostic = `${result.stdout || ''} ${result.stderr || ''}`.trim();
         }
       } catch (conversionError: any) {
